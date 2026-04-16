@@ -459,7 +459,7 @@ export default function MenuApp() {
         </>)}
       </div>
 
-      {editing && <EditModal />}
+      {editing && <EditModal ()>}
     </div>
   );
 }
