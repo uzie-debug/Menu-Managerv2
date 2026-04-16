@@ -18,7 +18,6 @@ const mkId = () => Math.random().toString(36).slice(2, 9);
 
 // ── Initial Data ─────────────────────────────────────────────
 const INITIAL_STRAINS = [
-const INITIAL_STRAINS = [
   { id: mkId(), tier: 'reserve', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
   { id: mkId(), tier: 'reserve', type: 'I', name: 'Northern Lights', thc: '', lineage: 'Afghani × Thai Landrace', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'reserve', type: 'I', name: 'L.A. Banana Cake', thc: '', lineage: 'L.A. Kush Cake × Banana Punch', terpenes: 'Limonene · B-Caryophyllene · B-Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
