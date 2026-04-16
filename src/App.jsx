@@ -35,7 +35,6 @@ const migrateStrain = (s) => {
 // ── Initial Data ─────────────────────────────────────────────
 const RAW_INITIAL_STRAINS = [
   { id: mkId(), tier: 'reserve', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
-  // Shortened for clarity - localStorage overrides this anyway
 ];
 const INITIAL_STRAINS = RAW_INITIAL_STRAINS.map(migrateStrain);
 
@@ -190,6 +189,7 @@ export default function MenuApp() {
   const [tab, setTab] = useState('edit-flower');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
+  const [showHelp, setShowHelp] = useState(false); // New state for tutorial
 
   // LOAD FROM LOCALSTORAGE
   useEffect(() => {
@@ -373,6 +373,36 @@ export default function MenuApp() {
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui,sans-serif', color: C.text }}>
       <div style={{ background: '#12122a', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', justifyContent: 'space-between' }}>
         <div><div style={{ fontWeight: 'bold', fontSize: '15px' }}>PURLIFE — HOBBS</div><div style={{ fontSize: '11px', color: C.muted }}>Menu Manager v2</div></div>
+      </div>
+
+      {/* Tutorial Banner */}
+      <div style={{ background: '#252540', borderBottom: `1px solid ${C.border}` }}>
+        <button onClick={() => setShowHelp(!showHelp)} style={{ width: '100%', padding: '12px 18px', background: 'transparent', border: 'none', color: C.text, textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: 'bold', fontSize: '13px' }}>
+          <span>💡 Welcome to the Menu Manager! Click here to learn how to use this program.</span>
+          <span>{showHelp ? '▲' : '▼'}</span>
+        </button>
+        {showHelp && (
+          <div style={{ padding: '0 18px 18px 18px', fontSize: '13px', color: '#a09db0', lineHeight: '1.6' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+              <div>
+                <strong style={{ color: '#fff', fontSize: '14px' }}>FLOWER MENU</strong>
+                <ul style={{ paddingLeft: '20px', marginTop: '8px' }}>
+                  <li style={{ marginBottom: '8px' }}><strong>To add strains:</strong> Click the blue "+ Add Flower Strain" button. Fill out the details, then check the boxes at the bottom to assign it to Reserve, Premium, etc.</li>
+                  <li style={{ marginBottom: '8px' }}><strong>To edit strains:</strong> Click the "Edit" button next to any strain in the list to update its info or change its tier.</li>
+                  <li><strong>To mark an item Out of Stock:</strong> Click the green "In Stock" button. It will turn gray, cross out the name, and temporarily hide the item from the printout without deleting the data! Click it again to bring it back.</li>
+                </ul>
+              </div>
+              <div>
+                <strong style={{ color: '#fff', fontSize: '14px' }}>EXTRACTS & VAPES</strong>
+                <ul style={{ paddingLeft: '20px', marginTop: '8px' }}>
+                  <li style={{ marginBottom: '8px' }}><strong>To add disposables:</strong> Click "+ Add Vape / Concentrate". Select "Vape / Cart" as the Category. <em>Important: Make sure to check the "Includes Battery" box at the bottom.</em></li>
+                  <li style={{ marginBottom: '8px' }}><strong>To add cartridges:</strong> Do the same as above, but <em>make sure "Includes Battery" is UNCHECKED.</em></li>
+                  <li><strong>To add concentrates:</strong> Select "Concentrate (Wax)" as the Category. You will see a new dropdown appear where you can select the Texture (like Badder or Sugar). <em>Leave the battery box unchecked.</em></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, background: '#12122a', overflowX: 'auto' }}>
