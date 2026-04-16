@@ -28,15 +28,15 @@ const TIER_CFG = {
     halvesHeader: 'CALIENTE BRAND · ½ oz',
     halvesPrice: '$30 each · 2 for $55' 
   },
-  third: { 
-    label: 'Third Party Flower',
-    eighthsHeader: 'THIRD PARTY FLOWER · 3.5g · third-party',
-    eighthsPrice: 'ask your budtender',
+  cookies: { 
+    label: 'Cookies (3rd party)',
+    eighthsHeader: 'COOKIES BRAND · 3.5g · third-party',
+    eighthsPrice: '$36 each',
     halvesHeader: null,
     halvesPrice: null 
   },
 };
-const TIER_ORDER = ['reserve', 'premium', 'caliente', 'third'];
+const TIER_ORDER = ['reserve', 'premium', 'caliente', 'cookies'];
 
 const mkId = () => Math.random().toString(36).slice(2, 9);
 
@@ -57,13 +57,15 @@ const INITIAL_STRAINS = [
   { id: mkId(), tier: 'reserve', type: 'H', name: 'Blue Zushi #4', thc: '23', lineage: 'Zkittlez × Gelato', terpenes: 'Limonene · Caryophyllene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'reserve', type: 'H', name: 'Lemon Cherry Pie #5', thc: '21', lineage: 'Lemon Cherry Gelato × Cherry Pie', terpenes: 'Limonene · Myrcene · Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'H', name: 'Almond Mochi', thc: '29', lineage: 'Almond Milk × Mochi', terpenes: 'Myrcene · Caryophyllene · Limonene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
-  { id: mkId(), tier: 'premium', type: 'H', name: 'HiFi 4G', thc: '25', lineage: 'White Fire OG cut', terpenes: 'Terpinolene · Myrcene · Ocimene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'premium', type: 'H', name: 'WiFi 4G', thc: '25', lineage: 'White Fire OG cut', terpenes: 'Terpinolene · Myrcene · Ocimene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'H', name: 'Blue Zushi #4', thc: '24', lineage: 'Zkittlez × Gelato', terpenes: 'Limonene · Caryophyllene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'S', name: 'Dark Phoenix', thc: '22', lineage: 'Trainwreck × Jack Herer', terpenes: 'Terpinolene · Ocimene · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'H', name: 'Don Mega', thc: '22', lineage: 'Big Buddha Cheese × Black Domina', terpenes: 'Myrcene · Caryophyllene · Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'I', name: 'MK Ultra #6', thc: '22', lineage: 'G-13 × OG Kush', terpenes: 'Myrcene · Caryophyllene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
-  { id: mkId(), tier: 'premium', type: 'H', name: 'Pepe Silvia #4', thc: '22', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
-  { id: mkId(), tier: 'premium', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEigths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'premium', type: 'H', name: 'Pope Silvia #4', thc: '22', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'cookies', type: 'H', name: 'Ridgeline Lants', thc: '36', lineage: 'Cookies brand', terpenes: '', hasEighths: true, hasHalves: false, flags: { terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'cookies', type: 'H', name: 'Triple Scoop Gelato', thc: '36', lineage: 'Cookies brand', terpenes: '', hasEighths: true, hasHalves: false, flags: { terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'cookies', type: 'S', name: 'Mexican Flan', thc: '35', lineage: 'Cookies brand', terpenes: '', hasEighths: true, hasHalves: false, flags: { terpenes: true }, blanks: {} },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────
