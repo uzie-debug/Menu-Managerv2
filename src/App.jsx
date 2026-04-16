@@ -63,7 +63,7 @@ const INITIAL_STRAINS = [
   { id: mkId(), tier: 'premium', type: 'H', name: 'Don Mega', thc: '22', lineage: 'Big Buddha Cheese × Black Domina', terpenes: 'Myrcene · Caryophyllene · Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'I', name: 'MK Ultra #6', thc: '22', lineage: 'G-13 × OG Kush', terpenes: 'Myrcene · Caryophyllene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
   { id: mkId(), tier: 'premium', type: 'H', name: 'Pepe Silvia #4', thc: '22', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
-  { id: mkId(), tier: 'premium', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEigths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blans: {} },
+  { id: mkId(), tier: 'premium', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEigths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────
