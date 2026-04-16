@@ -18,8 +18,44 @@ const mkId = () => Math.random().toString(36).slice(2, 9);
 
 // ── Initial Data ─────────────────────────────────────────────
 const INITIAL_STRAINS = [
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'MK Ultra #3', thc: '30', lineage: 'G-13 × OG Kush', terpenes: 'Myrcene · Caryophyllene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
-  { id: mkId(), tier: 'thirdParty', type: 'S', name: 'Mexican Flan', thc: '35', price: '$45', lineage: 'Cookies Brand', terpenes: '', hasEighths: true, hasHalves: false, flags: { terpenes: true }, blanks: {} }
+const INITIAL_STRAINS = [
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Northern Lights', thc: '', lineage: 'Afghani × Thai Landrace', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'L.A. Banana Cake', thc: '', lineage: 'L.A. Kush Cake × Banana Punch', terpenes: 'Limonene · B-Caryophyllene · B-Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Chicken n’ Wafflez', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Chocolate Waffles', thc: '', lineage: 'L.A. Amnesia × Thin Mints', terpenes: 'B-Caryophyllene · Terpinolene · Ocimene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Dark Phoenix', thc: '', lineage: 'Trainwreck × Jack Herrer', terpenes: 'Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Superboof', thc: '', lineage: 'Black Cherry Punch × Tropicana Cookies', terpenes: 'D-Limonene · B-Caryophyllene · Nerolidol', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Alien OG', thc: '', lineage: 'Tahoe OG × Alien Kush', terpenes: 'Limonene · B-Caryophyllene · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Mystery Mix', thc: '', lineage: 'Mystery Machine × Cake Mix', terpenes: 'B-Caryophyllene · Limonene · Nerolidol', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Purple Octane x Jealousy', thc: '', lineage: 'Biscotti × Sherb Bx1 × Jealousy F2', terpenes: 'D-Limonene · B-Caryophyllene · Linalool · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Grand Master Kush', thc: '', lineage: 'Kush × Bubba Kush', terpenes: 'Myrcene · Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Coconut Milk', thc: '', lineage: 'Tropical Smoothie × Cereal Milk', terpenes: 'Myrcene · Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Hardcore OG', thc: '', lineage: 'Hardcore OG × Big Bud × DJ Short Blueberry', terpenes: 'D-Limonene · Linalool · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Irish Cannonball x Blue Dream', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Zack’s Cake', thc: '', lineage: 'Zack’s Pie × Jungle Cake', terpenes: 'B-Caryophyllene · D-Limonene · A-Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Zkittles x Afghani', thc: '', lineage: 'Zkittles × Afghani', terpenes: 'Limonene · Myrcene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Don Mega', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Brain Freeze', thc: '', lineage: 'Legends Ultimate Indica × Cinderella 99', terpenes: 'Limonene · B-Caryophyllene · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Whiplash', thc: '', lineage: 'M8 × Lebanon 3', terpenes: 'Myrcene · B-Caryophyllene · Guaiol', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Seriotica', thc: '', lineage: 'Serious Mimosa × Cookies', terpenes: 'Limonene · A-Pinene · B-Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Hypothermia', thc: '', lineage: 'Blunicorn × Slurricane 23', terpenes: 'Ocimene · A-Pinene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Hi-Fi 4G', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Hawaiian Dream', thc: '', lineage: 'Blue Dream × Mauie Wowie', terpenes: 'Terpinolene · B-Pinene · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Gorilla Cream', thc: '', lineage: 'GG4 × Cookies And Cream × Big Bud', terpenes: 'Myrcene · B-Caryophyllene · Limonene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Divine Frost', thc: '', lineage: 'Divine Gelato × Permafrost', terpenes: 'B-Caryophyllene · Limonene · A-Humulene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Cap Junky', thc: '', lineage: 'Alien Cookies × Kush Mints', terpenes: 'D-Limonene · B-Caryophyllene · Linalool', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Banana Kush', thc: '', lineage: 'Ghost OG × Skunk × Haze', terpenes: 'A-Pinene · Linalool · Guaiol', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Lemon Suit Larry', thc: '', lineage: 'Lemon Larry × Commerce City Kush', terpenes: 'Myrcene · Terpinolene · Ocimene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Tropical Cake', thc: '', lineage: 'Tropicana Cookie × Wedding Cake', terpenes: 'B-Caryophyllene · Limonene · Myrcene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Açai Cookies', thc: '', lineage: 'Açaí Mints × Banana Punch', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Candied Taters', thc: '', lineage: 'Potato Kush × Candied Lemons', terpenes: 'Camphene · Terpinolene · A-Terpinolene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Champaya', thc: '', lineage: 'Papaya × Mimosa V6', terpenes: 'Limonene · A-Pinene · B-Pinene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Chapel of Love', thc: '', lineage: 'F1 Durban × Kush Mints × Gushers', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Cherry Animal Punch', thc: '', lineage: 'Animal Cookies × Cherry AK47 × Purple Punch', terpenes: 'B-Caryophyllene · Limonene · Humulene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'I', name: 'Countree Grammar', thc: '', lineage: 'Açaí Mints × Banana Punch', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'H', name: 'Critical Glue', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true, flags: { lineage: true, terpenes: true }, blanks: {} },
+  { id: mkId(), tier: 'reserve', type: 'S', name: 'Franco’s Lemon Cheese', thc: '', lineage: 'Lemon Haze × Exodus Cheese', terpenes: 'B-Caryophyllene · Myrcene · Limonene', hasEighths: true, hasHalves: true, flags: {}, blanks: {} }
 ];
 
 const INITIAL_EXTRACTS = [
