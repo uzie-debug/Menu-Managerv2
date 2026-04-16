@@ -29,8 +29,8 @@ const TIER_CFG = {
     halvesPrice: '$30 each · 2 for $55' 
   },
   cookies: { 
-    label: 'Cookies (3rd party)',
-    eighthsHeader: 'COOKIES BRAND · 3.5g · third-party',
+    label: 'Third Party',
+    eighthsHeader: 'THIRD PARTY · 3.5g · third-party',
     eighthsPrice: '$36 each',
     halvesHeader: null,
     halvesPrice: null 
