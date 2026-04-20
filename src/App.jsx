@@ -18,12 +18,6 @@ const mkId = () => Math.random().toString(36).slice(2, 9);
 
 // ── Data Migration Tool ──────────────────────────────────────
 const migrateStrain = (s) => {
-  const { flags, blanks, ...cleanS } = s; // Strips out deprecated flag data
-  
-  if (cleanS.tiers && cleanS.tiers.reserve && cleanS.tiers.reserve.thc !== undefined) {
-    return { ...cleanS, inStock: cleanS.inStock !== false }; 
-  }
-  
   const t = {
     reserve: { active: false, eighths: false, halves: false, price: '', thc: '' },
     premium: { active: false, eighths: false, halves: false, price: '', thc: '' },
@@ -31,18 +25,19 @@ const migrateStrain = (s) => {
     thirdParty: { active: false, eighths: false, halves: false, price: '', thc: '' }
   };
   
-  if (cleanS.tier && t[cleanS.tier]) {
-    t[cleanS.tier] = { active: true, eighths: !!cleanS.hasEighths, halves: !!cleanS.hasHalves, price: cleanS.price || '', thc: cleanS.thc || '' };
-  } else if (cleanS.tiers) {
+  if (s.tier && t[s.tier]) {
+    t[s.tier] = { active: true, eighths: !!s.hasEighths, halves: !!s.hasHalves, price: s.price || '', thc: s.thc || '' };
+  } else if (s.tiers) {
     for (const key of Object.keys(t)) {
-      if (cleanS.tiers[key]) {
-        t[key] = { ...cleanS.tiers[key], thc: cleanS.thc || '' };
+      if (s.tiers[key]) {
+        t[key] = { ...s.tiers[key], thc: s.tiers[key].thc || s.thc || '' };
       }
     }
   }
   
-  const { tier, hasEighths, hasHalves, price, thc, ...rest } = cleanS; 
-  return { ...rest, tiers: t, inStock: cleanS.inStock !== false };
+  // Strip out old properties including flags/blanks
+  const { tier, hasEighths, hasHalves, price, thc, flags, blanks, ...rest } = s; 
+  return { ...rest, tiers: t, inStock: s.inStock !== false };
 };
 
 // ── Initial Data ─────────────────────────────────────────────
@@ -171,4 +166,247 @@ function buildExtractsHtml(extracts) {
     return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${s.name}</td><td>${extVal}</td><td class="ctr">${s.size}</td><td class="ctr"><strong>${s.price}</strong></td></tr>`;
   }).join('');
 
-  const renderBrandGroup =
+  const renderBrandGroup = (brand, disposables, carts) => {
+    let html = `<div class="brand-box"><div class="brand-title">${brand.toUpperCase()}</div>`;
+    if (disposables.length) {
+      html += `<table><thead><tr><td class="sub-hdr" colspan="5">DISPOSABLES (Includes Battery)</td></tr><tr class="chdr"><th>TYPE</th><th>STRAIN / FLAVOR</th><th>EXTRACT TYPE</th><th>SIZE</th><th>PRICE</th></tr></thead><tbody>${buildRows(disposables)}</tbody></table>`;
+    }
+    if (carts.length) {
+      html += `<table><thead><tr><td class="sub-hdr" colspan="5">CARTRIDGES (510 Thread)</td></tr><tr class="chdr"><th>TYPE</th><th>STRAIN / FLAVOR</th><th>EXTRACT TYPE</th><th>SIZE</th><th>PRICE</th></tr></thead><tbody>${buildRows(carts)}</tbody></table>`;
+    }
+    return html + `</div>`;
+  };
+
+  let vapesHtml = '';
+  if (vapes.length) {
+    vapesHtml += `<div class="master-hdr">DISPOSABLES & CARTRIDGES</div>`;
+    const brands = [...new Set(vapes.map(v => v.brand))].sort();
+    brands.forEach(brand => {
+      const brandVapes = vapes.filter(v => v.brand === brand);
+      const disposables = brandVapes.filter(v => v.hasBattery);
+      const carts = brandVapes.filter(v => !v.hasBattery);
+      vapesHtml += renderBrandGroup(brand, disposables, carts);
+    });
+  }
+
+  let concHtml = '';
+  if (concentrates.length) {
+    concHtml += `<div class="master-hdr" style="margin-top:20px;">CONCENTRATES</div>`;
+    const brands = [...new Set(concentrates.map(c => c.brand))].sort();
+    brands.forEach(brand => {
+      const brandConcs = concentrates.filter(c => c.brand === brand);
+      concHtml += `<div class="brand-box"><div class="brand-title">${brand.toUpperCase()}</div>`;
+      concHtml += `<table><thead><tr class="chdr"><th>TYPE</th><th>STRAIN</th><th>EXTRACT TYPE</th><th>SIZE</th><th>PRICE</th></tr></thead><tbody>${buildRows(brandConcs)}</tbody></table></div>`;
+    });
+  }
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PurLife – Extracts & Vapes</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box} body{font-family:Helvetica,Arial,sans-serif;font-size:9pt;color:#1a1a1a;padding:.4in}
+.store{font-size:18pt;font-weight:bold;text-align:center;margin-bottom:3px} .ttl{font-size:12pt;font-weight:bold;text-align:center;color:#2e2e2e;margin-bottom:5px}
+hr{border:none;border-top:1px solid #2e2e2e;margin-bottom:15px} .leg{font-size:8pt;color:#555;text-align:center;margin-bottom:15px}
+.master-hdr{background:#111;color:#fff;font-weight:bold;font-size:14pt;text-align:center;padding:6px;margin-bottom:15px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.brand-box{border:2px solid #2e2e2e;padding:10px;margin-bottom:15px;page-break-inside:avoid;border-radius:4px;}
+.brand-title{background:#2e2e2e;color:#fff;font-size:12pt;font-weight:bold;text-align:center;padding:4px;margin:-10px -10px 10px -10px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+table{width:100%;border-collapse:collapse;margin-bottom:10px} table:last-child{margin-bottom:0}
+.sub-hdr{background:#666;color:#fff;font-weight:bold;font-size:9pt;padding:4px 6px;text-align:center;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.chdr th{background:#e8e8e8;font-size:7pt;color:#555;padding:3px 5px;text-align:left;border-bottom:1px solid #888;font-weight:bold;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+tbody tr td{padding:5px;border-bottom:1px solid #ccc;vertical-align:middle}
+.tc{font-weight:bold;font-size:9.5pt;text-align:center;width:5%} .ctr{text-align:center}
+.foot{font-size:6.5pt;color:#888;text-align:center;border-top:.5px solid #aaa;padding-top:4px;margin-top:15px}
+</style></head><body>
+<div class="store">PURLIFE — HOBBS</div><div class="ttl">EXTRACTS & VAPES</div><hr>
+<div class="leg"><span style="color:${TC.I};font-weight:bold">I</span> Indica &nbsp;&nbsp; <span style="color:${TC.H};font-weight:bold">H</span> Hybrid &nbsp;&nbsp; <span style="color:${TC.S};font-weight:bold">S</span> Sativa</div>
+${vapesHtml}${concHtml}
+<div class="foot">Prices subject to change</div><script>window.onload=function(){window.print()}</script></body></html>`;
+}
+
+// ── UI theme ─────────────────────────────────────────────────
+const C = { bg: '#18182a', panel: '#21213a', border: '#35355a', text: '#ccc8e8', muted: '#7a77a0', accent: '#7c6fcd', danger: '#c05050', good: '#5a9a5a' };
+
+// ── Main app ─────────────────────────────────────────────────
+export default function MenuApp() {
+  const [strains, setStrains] = useState(INITIAL_STRAINS);
+  const [extracts, setExtracts] = useState(INITIAL_EXTRACTS);
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState('edit-flower');
+  const [editing, setEditing] = useState(null);
+  const [form, setForm] = useState({});
+
+  // LOAD FROM LOCALSTORAGE
+  useEffect(() => {
+    const savedStrains = localStorage.getItem('purlife-strains-v2');
+    const savedExtracts = localStorage.getItem('purlife-extracts-v2');
+    if (savedStrains) {
+      try { setStrains(JSON.parse(savedStrains).map(migrateStrain)); } catch (e) { }
+    }
+    if (savedExtracts) {
+      try { setExtracts(JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false }))); } catch (e) { }
+    }
+    setLoaded(true);
+  }, []);
+
+  // SAVE TO LOCALSTORAGE
+  useEffect(() => {
+    if (!loaded) return;
+    localStorage.setItem('purlife-strains-v2', JSON.stringify(strains));
+    localStorage.setItem('purlife-extracts-v2', JSON.stringify(extracts));
+  }, [strains, extracts, loaded]);
+
+  const deleteItem = (id, isExtract) => {
+    if (window.confirm('Remove this item entirely? (Hint: You can just mark it "Out of Stock" instead!)')) {
+      if (isExtract) setExtracts(p => p.filter(s => s.id !== id));
+      else setStrains(p => p.filter(s => s.id !== id));
+    }
+  };
+
+  const toggleStock = (id, isExtract) => {
+    if (isExtract) setExtracts(p => p.map(s => s.id === id ? { ...s, inStock: s.inStock === false ? true : false } : s));
+    else setStrains(p => p.map(s => s.id === id ? { ...s, inStock: s.inStock === false ? true : false } : s));
+  };
+
+  const openEdit = (s, isExtract) => { setEditing({ ...s, isExtract }); setForm({ ...s }); };
+  
+  const openNewFlower = () => { 
+    setEditing({ isNew: true, isExtract: false }); 
+    setForm({ 
+      id: mkId(), type: 'H', name: '', lineage: '', terpenes: '', inStock: true,
+      tiers: {
+        reserve: { active: true, eighths: true, halves: true, price: '', thc: '' },
+        premium: { active: false, eighths: true, halves: true, price: '', thc: '' },
+        caliente: { active: false, eighths: true, halves: true, price: '', thc: '' },
+        thirdParty: { active: false, eighths: true, halves: false, price: '', thc: '' }
+      }
+    }); 
+  };
+  
+  const openNewExtract = () => { setEditing({ isNew: true, isExtract: true }); setForm({ id: mkId(), category: 'vape', type: 'H', brand: '', name: '', extract: 'Distillate', texture: '', size: '1g', price: '', hasBattery: false, inStock: true }); };
+
+  const saveForm = () => {
+    if (editing.isExtract) {
+      if (editing.isNew) setExtracts(p => [...p, form]);
+      else setExtracts(p => p.map(s => s.id === form.id ? form : s));
+    } else {
+      if (editing.isNew) setStrains(p => [...p, form]);
+      else setStrains(p => p.map(s => s.id === form.id ? form : s));
+    }
+    setEditing(null);
+  };
+
+  const doPrint = (menuType) => {
+    const html = menuType === 'extracts' ? buildExtractsHtml(extracts) : buildFlowerHtml(strains, menuType);
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); }
+  };
+
+  // ── Edit Modal ─────────────────────────────────────────────
+  const EditModal = () => {
+    const inp = (field, type = 'text') => <input type={type} value={form[field] ?? ''} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} style={{ width: '100%', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '6px 8px', borderRadius: '3px', fontSize: '13px' }} />;
+    const sel = (field, opts) => <select value={form[field] ?? ''} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} style={{ width: '100%', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '6px 8px', borderRadius: '3px', fontSize: '13px' }}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>;
+    const lbl = (text) => <label style={{ display: 'block', color: C.muted, fontSize: '11px', marginBottom: '4px' }}>{text}</label>;
+    
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.75)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+        <div style={{ background: '#1a1a2e', border: `1px solid ${C.border}`, borderRadius: '8px', padding: '22px', width: '550px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto' }}>
+          <h3 style={{ color: C.text, marginBottom: '16px', fontSize: '15px' }}>{editing.isNew ? 'Add Item' : `Edit: ${form.name}`}</h3>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', marginBottom: '10px' }}>
+            <div>{lbl('Type')}{sel('type', [['I', 'Indica'], ['H', 'Hybrid'], ['S', 'Sativa']])}</div>
+            <div>{lbl(editing.isExtract ? 'Strain / Flavor Name' : 'Strain Name')}{inp('name')}</div>
+          </div>
+
+          {!editing.isExtract && (
+            <>
+              <div style={{ marginBottom: '10px' }}>{lbl('Dominant Terpenes')}{inp('terpenes')}</div>
+              <div style={{ marginBottom: '14px' }}>{lbl('Lineage')}{inp('lineage')}</div>
+              
+              <div style={{ marginBottom: '14px', background: '#252540', padding: '10px', borderRadius: '6px', border: `1px solid ${C.border}` }}>
+                {lbl('Available Tiers (Check all that apply)')}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginTop: '8px' }}>
+                  {TIER_ORDER.map(t => (
+                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: C.text, fontSize: '13px', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!form.tiers?.[t]?.active} onChange={e => {
+                        const checked = e.target.checked;
+                        setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], active: checked } } }));
+                      }} />
+                      {TIER_CFG[t].label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {TIER_ORDER.filter(t => form.tiers?.[t]?.active).map(t => (
+                <div key={t} style={{ background: '#1c1c31', border: `1px solid ${C.border}`, padding: '12px', borderRadius: '6px', marginBottom: '12px' }}>
+                  <div style={{ color: C.text, fontWeight: 'bold', fontSize: '12px', marginBottom: '10px', textTransform: 'uppercase' }}>{TIER_CFG[t].label} Settings</div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                    <div>
+                      {lbl('THC %')}
+                      <input value={form.tiers[t].thc || ''} onChange={e => {
+                        const val = e.target.value;
+                        setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], thc: val } } }));
+                      }} style={{ width: '100%', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '6px 8px', borderRadius: '3px', fontSize: '13px' }} />
+                    </div>
+
+                    {t === 'thirdParty' && (
+                      <div>
+                        {lbl('Price (e.g. $45)')}
+                        <input value={form.tiers[t].price || ''} onChange={e => {
+                          const val = e.target.value;
+                          setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], price: val } } }));
+                        }} style={{ width: '100%', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '6px 8px', borderRadius: '3px', fontSize: '13px' }} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '20px' }}>
+                    {[['eighths', 'In Eighths'], ['halves', 'In Halves']].map(([f, l]) => (
+                      <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: C.text, cursor: 'pointer', fontSize: '13px' }}>
+                        <input type="checkbox" checked={!!form.tiers[t][f]} onChange={e => {
+                          const checked = e.target.checked;
+                          setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], [f]: checked } } }));
+                        }} />{l}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {editing.isExtract && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+                <div>{lbl('Category')}{sel('category', [['vape', 'Vape / Cart'], ['concentrate', 'Concentrate (Wax)']])}</div>
+                <div>{lbl('Brand')}{inp('brand')}</div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: form.category === 'concentrate' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                <div>{lbl('Extract Type')}{sel('extract', [['Distillate','Distillate'],['Live Resin','Live Resin'],['Cured Resin','Cured Resin'],['Live Rosin','Live Rosin']])}</div>
+                
+                {form.category === 'concentrate' && (
+                  <div>{lbl('Texture')}{sel('texture', [['','-- Blank --'],['Badder','Badder'],['Sugar','Sugar'],['Crumble','Crumble'],['Wax','Wax'],['Shatter','Shatter']])}</div>
+                )}
+                
+                <div>{lbl('Size')}{sel('size', [['0.5g','0.5g'],['1g','1g'],['2g','2g'],['3.5g','3.5g'],['4g','4g']])}</div>
+                <div>{lbl('Price (e.g. $40)')}{inp('price')}</div>
+              </div>
+              {form.category === 'vape' && (
+                <div style={{ marginBottom: '18px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: C.text, cursor: 'pointer', fontSize: '13px' }}><input type="checkbox" checked={!!form.hasBattery} onChange={e => setForm(p => ({ ...p, hasBattery: e.target.checked }))} />Includes Battery (Disposable)</label>
+                </div>
+              )}
+            </>
+          )}
+
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
+            <button onClick={() => setEditing(null)} style={{ background: C.panel, color: C.muted, border: `1px solid ${C.border}`, padding: '7px 16px', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={saveForm} style={{ background: C.accent, color: '#fff', border: 'none', padding: '7px 16px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Main Render ────────────────────────────────────────────
+  return (
+    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui,sans-serif', color: C.text }}>
