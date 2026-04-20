@@ -177,7 +177,7 @@ function buildExtractsHtml(extracts) {
       html += `<table><thead><tr><td class="sub-hdr" colspan="5">DISPOSABLES (Includes Battery)</td></tr><tr class="chdr"><th>TYPE</th><th>STRAIN / FLAVOR</th><th>EXTRACT TYPE</th><th>SIZE</th><th>PRICE</th></tr></thead><tbody>${buildRows(disposables)}</tbody></table>`;
     }
     if (carts.length) {
-      html += `<table><thead><tr><td class="sub-hdr" colspan="5">CARTRIDGES (510 Thread)</td></tr><tr class="chdr"><th>TYPE</th><th>STRAIN / FLAVOR</th><th>EXTRACT TYPE</th><th>SIZE</th><th>PRICE</th></tr></thead><tbody>${buildRows(carts)}</tbody></table>`;
+      html += `<table><thead><tr><td class="sub-hdr" colspan="5">CARTRIDGES</td></tr><tr class="chdr"><th>TYPE</th><th>STRAIN / FLAVOR</th><th>EXTRACT TYPE</th><th>SIZE</th><th>PRICE</th></tr></thead><tbody>${buildRows(carts)}</tbody></table>`;
     }
     return html + `</div>`;
   };
