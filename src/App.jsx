@@ -18,6 +18,12 @@ const mkId = () => Math.random().toString(36).slice(2, 9);
 
 // ── Data Migration Tool ──────────────────────────────────────
 const migrateStrain = (s) => {
+  const { flags, blanks, ...cleanS } = s; // Strips out deprecated flag data
+  
+  if (cleanS.tiers && cleanS.tiers.reserve && cleanS.tiers.reserve.thc !== undefined) {
+    return { ...cleanS, inStock: cleanS.inStock !== false }; 
+  }
+  
   const t = {
     reserve: { active: false, eighths: false, halves: false, price: '', thc: '' },
     premium: { active: false, eighths: false, halves: false, price: '', thc: '' },
@@ -25,19 +31,18 @@ const migrateStrain = (s) => {
     thirdParty: { active: false, eighths: false, halves: false, price: '', thc: '' }
   };
   
-  if (s.tier && t[s.tier]) {
-    t[s.tier] = { active: true, eighths: !!s.hasEighths, halves: !!s.hasHalves, price: s.price || '', thc: s.thc || '' };
-  } else if (s.tiers) {
+  if (cleanS.tier && t[cleanS.tier]) {
+    t[cleanS.tier] = { active: true, eighths: !!cleanS.hasEighths, halves: !!cleanS.hasHalves, price: cleanS.price || '', thc: cleanS.thc || '' };
+  } else if (cleanS.tiers) {
     for (const key of Object.keys(t)) {
-      if (s.tiers[key]) {
-        t[key] = { ...s.tiers[key], thc: s.tiers[key].thc || s.thc || '' };
+      if (cleanS.tiers[key]) {
+        t[key] = { ...cleanS.tiers[key], thc: cleanS.thc || '' };
       }
     }
   }
   
-  // Strip out old properties including flags/blanks
-  const { tier, hasEighths, hasHalves, price, thc, flags, blanks, ...rest } = s; 
-  return { ...rest, tiers: t, inStock: s.inStock !== false };
+  const { tier, hasEighths, hasHalves, price, thc, ...rest } = cleanS; 
+  return { ...rest, tiers: t, inStock: cleanS.inStock !== false };
 };
 
 // ── Initial Data ─────────────────────────────────────────────
@@ -410,3 +415,81 @@ export default function MenuApp() {
   // ── Main Render ────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui,sans-serif', color: C.text }}>
+      <div style={{ background: '#12122a', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', justifyContent: 'space-between' }}>
+        <div><div style={{ fontWeight: 'bold', fontSize: '15px' }}>PURLIFE — HOBBS</div><div style={{ fontSize: '11px', color: C.muted }}>Menu Manager v2</div></div>
+      </div>
+
+      <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, background: '#12122a', overflowX: 'auto' }}>
+        {[['edit-flower', 'Edit Flower'], ['edit-extracts', 'Edit Extracts'], ['eighths', 'Print Eighths'], ['halves', 'Print Halves'], ['extracts', 'Print Extracts']].map(([id, lbl]) => (
+          <button key={id} onClick={() => setTab(id)} style={{ padding: '10px 18px', border: 'none', background: 'transparent', color: tab === id ? '#fff' : C.muted, borderBottom: tab === id ? `2px solid ${C.accent}` : '2px solid transparent', cursor: 'pointer', fontSize: '13px', fontWeight: tab === id ? 'bold' : 'normal', whiteSpace: 'nowrap' }}>{lbl}</button>
+        ))}
+      </div>
+
+      <div style={{ padding: '18px', maxWidth: '920px', margin: '0 auto' }}>
+        {tab === 'edit-flower' && (
+          <div>
+            <button onClick={openNewFlower} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '14px' }}>+ Add Flower Strain</button>
+            {TIER_ORDER.map(tier => {
+              const ts = sortItems(strains.filter(s => s.tiers?.[tier]?.active));
+              if (!ts.length) return null;
+              return (
+                <div key={tier} style={{ marginBottom: '16px' }}>
+                  <div style={{ background: '#2a2a45', color: C.text, fontWeight: 'bold', padding: '7px 12px', borderRadius: '4px 4px 0 0', fontSize: '12px', textTransform: 'uppercase' }}>{TIER_CFG[tier].label}</div>
+                  <div style={{ border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: '0 0 4px 4px', overflow: 'hidden' }}>
+                    {ts.map((s, i) => (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: i % 2 === 0 ? C.panel : '#252540', borderBottom: `1px solid ${C.border}`, opacity: s.inStock === false ? 0.4 : 1 }}>
+                        <span style={{ color: TU[s.type], fontWeight: 'bold', width: '16px' }}>{s.type}</span>
+                        <span style={{ flex: 1, textDecoration: s.inStock === false ? 'line-through' : 'none' }}>{s.name}</span>
+                        {tier === 'thirdParty' && <span style={{ color: C.muted, fontSize: '11px', width: '30px' }}>{s.tiers[tier].price}</span>}
+                        <button onClick={() => toggleStock(s.id, false)} style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', width: '70px' }}>{s.inStock === false ? 'Out' : 'In Stock'}</button>
+                        <button onClick={() => openEdit(s, false)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
+                        <button onClick={() => deleteItem(s.id, false)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {tab === 'edit-extracts' && (
+          <div>
+            <button onClick={openNewExtract} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '14px' }}>+ Add Vape / Concentrate</button>
+            {['vape', 'concentrate'].map(cat => {
+              const ts = sortItems(extracts.filter(s => s.category === cat));
+              if (!ts.length) return null;
+              return (
+                <div key={cat} style={{ marginBottom: '16px' }}>
+                  <div style={{ background: '#2a2a45', color: C.text, fontWeight: 'bold', padding: '7px 12px', borderRadius: '4px 4px 0 0', fontSize: '12px', textTransform: 'uppercase' }}>{cat === 'vape' ? 'Disposables & Cartridges' : 'Concentrates'}</div>
+                  <div style={{ border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: '0 0 4px 4px', overflow: 'hidden' }}>
+                    {ts.map((s, i) => (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: i % 2 === 0 ? C.panel : '#252540', borderBottom: `1px solid ${C.border}`, opacity: s.inStock === false ? 0.4 : 1 }}>
+                        <span style={{ color: TU[s.type], fontWeight: 'bold', width: '16px' }}>{s.type}</span>
+                        <span style={{ flex: 1, textDecoration: s.inStock === false ? 'line-through' : 'none' }}><strong>{s.brand}</strong> - {s.name}</span>
+                        <span style={{ color: C.muted, fontSize: '11px', width: '100px' }}>{s.extract}{s.category === 'concentrate' && s.texture ? ` ${s.texture}` : ''}</span>
+                        <span style={{ color: C.muted, fontSize: '11px', width: '30px' }}>{s.size}</span>
+                        <button onClick={() => toggleStock(s.id, true)} style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', width: '70px' }}>{s.inStock === false ? 'Out' : 'In Stock'}</button>
+                        <button onClick={() => openEdit(s, true)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
+                        <button onClick={() => deleteItem(s.id, true)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {['eighths', 'halves', 'extracts'].includes(tab) && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', background: C.panel, padding: '10px 16px', borderRadius: '6px', border: `1px solid ${C.border}` }}>
+             <div style={{ fontSize: '12px', color: C.good }}>✓ Ready to print</div>
+            <button onClick={() => doPrint(tab)} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 22px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Open Print View</button>
+          </div>
+        )}
+      </div>
+
+      {editing && EditModal()}
+    </div>
+  );
+}
