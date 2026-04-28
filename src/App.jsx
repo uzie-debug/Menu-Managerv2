@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+const [showHelp, setShowHelp] = useState(false);
 
 // ── Type colors ──────────────────────────────────────────────
 const TC = { I: '#6B5B95', H: '#4A7A4A', S: '#B5651D' }; // print
@@ -297,6 +298,27 @@ export default function MenuApp() {
     }
     setEditing(null);
   };
+  const exportBackup = () => {
+  // Package up the current state
+  const backupData = {
+    strains: strains,
+    extracts: extracts // Assuming you have your extracts state here too!
+  };
+  
+  // Create a digital "file" in the browser
+  const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  
+  // Create an invisible link, click it to download, and clean it up
+  const link = document.createElement('a');
+  link.href = url;
+  // Names the file with today's date so your downloads folder stays organized
+  link.download = `purlife-menu-backup-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
 
   const doPrint = (menuType) => {
     const html = menuType === 'extracts' ? buildExtractsHtml(extracts) : buildFlowerHtml(strains, menuType);
@@ -412,13 +434,63 @@ export default function MenuApp() {
     );
   };
 
-  // ── Main Render ────────────────────────────────────────────
+// ── Main Render ────────────────────────────────────────────
+  const HelpModal = () => {
+  if (!showHelp) return null;
+  
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+      <div style={{ background: C.panel, padding: '24px', borderRadius: '8px', maxWidth: '500px', color: C.text, border: `1px solid ${C.border}`, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
+        <h2 style={{ marginTop: 0, color: '#fff', borderBottom: `1px solid ${C.border}`, paddingBottom: '10px' }}>
+          Menu Manager Tutorial
+        </h2>
+        <ul style={{ lineHeight: '1.8', fontSize: '14px', paddingLeft: '20px' }}>
+          <li><strong>Adding Inventory:</strong> Click "Add Strain" or "Add Extract" to create a new database entry.</li>
+          <li><strong>Flower Tiers:</strong> Check the boxes for Reserve, Premium, etc., to assign a strain to a tier. You can assign one strain to multiple tiers!</li>
+          <li><strong>Third-Party Pricing:</strong> If you select the "Third Party" tier, a custom price box will appear for that specific item.</li>
+          <li><strong>In-Stock Toggle:</strong> Use the ON/OFF button to temporarily hide an item from the printed menu without deleting it from the database.</li>
+          <li><strong>Backups:</strong> Click the "Backup JSON" button to download your menu data. Do this regularly to prevent data loss!</li>
+        </ul>
+        <button 
+          onClick={() => setShowHelp(false)} 
+          style={{ background: C.accent, color: '#fff', border: 'none', padding: '10px', borderRadius: '4px', cursor: 'pointer', width: '100%', marginTop: '15px', fontWeight: 'bold' }}
+        >
+          Got it!
+        </button>
+      </div>
+    </div>
+  );
+};
   return (
     <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'system-ui,sans-serif', color: C.text }}>
-      <div style={{ background: '#12122a', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', justifyContent: 'space-between' }}>
-        <div><div style={{ fontWeight: 'bold', fontSize: '15px' }}>PURLIFE — HOBBS</div><div style={{ fontSize: '11px', color: C.muted }}>Menu Manager v2</div></div>
+      
+      {/* 1. We call the Help Modal here at the top of the app! */}
+      <HelpModal />
+
+      {/* 2. Unified Top Header with Buttons */}
+      <div style={{ background: '#12122a', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#fff', letterSpacing: '0.5px' }}>PURLIFE — HOBBS</div>
+          <div style={{ fontSize: '11px', color: C.muted }}>Menu Manager v2</div>
+        </div>
+        
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={exportBackup} 
+            style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          >
+            💾 Backup JSON
+          </button>
+          <button 
+            onClick={() => setShowHelp(true)} 
+            style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          >
+            ❓ Help
+          </button>
+        </div>
       </div>
 
+      {/* 3. Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, background: '#12122a', overflowX: 'auto' }}>
         {[['edit-flower', 'Edit Flower'], ['edit-extracts', 'Edit Extracts'], ['eighths', 'Print Eighths'], ['halves', 'Print Halves'], ['extracts', 'Print Extracts']].map(([id, lbl]) => (
           <button key={id} onClick={() => setTab(id)} style={{ padding: '10px 18px', border: 'none', background: 'transparent', color: tab === id ? '#fff' : C.muted, borderBottom: tab === id ? `2px solid ${C.accent}` : '2px solid transparent', cursor: 'pointer', fontSize: '13px', fontWeight: tab === id ? 'bold' : 'normal', whiteSpace: 'nowrap' }}>{lbl}</button>
