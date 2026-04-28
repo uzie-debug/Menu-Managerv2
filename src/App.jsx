@@ -242,6 +242,35 @@ export default function MenuApp() {
   // PASTE IT HERE!
   const [showHelp, setShowHelp] = useState(false);
 
+  const importBackup = () => {
+    // Create an invisible file upload input
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    
+    // When the user selects a file, read it
+    input.onchange = (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const data = JSON.parse(event.target.result);
+          if (data.strains) setStrains(data.strains);
+          if (data.extracts) setExtracts(data.extracts);
+          alert('Backup successfully imported! Menu restored.');
+        } catch (err) {
+          alert('Error reading backup file. Make sure it is a valid JSON backup.');
+        }
+      };
+      reader.readAsText(file);
+    };
+    
+    // Trigger the invisible input
+    input.click();
+  };
+
   // LOAD FROM LOCALSTORAGE
   useEffect(() => {
     const savedStrains = localStorage.getItem('purlife-strains-v2');
@@ -479,6 +508,12 @@ export default function MenuApp() {
         
         <div style={{ display: 'flex', gap: '10px' }}>
           <button 
+            onClick={importBackup} 
+            style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          >
+            📂 Import JSON
+          </button>
+          <button 
             onClick={exportBackup} 
             style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
           >
@@ -492,7 +527,6 @@ export default function MenuApp() {
           </button>
         </div>
       </div>
-
       {/* 3. Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, background: '#12122a', overflowX: 'auto' }}>
         {[['edit-flower', 'Edit Flower'], ['edit-extracts', 'Edit Extracts'], ['eighths', 'Print Eighths'], ['halves', 'Print Halves'], ['extracts', 'Print Extracts']].map(([id, lbl]) => (
@@ -500,33 +534,56 @@ export default function MenuApp() {
         ))}
       </div>
 
-      <div style={{ padding: '18px', maxWidth: '920px', margin: '0 auto' }}>
-        {tab === 'edit-flower' && (
+    
+        <div style={{ padding: '18px', maxWidth: tab === 'edit-flower' ? '1400px' : '920px', margin: '0 auto', transition: 'max-width 0.3s ease' }}>
+       {tab === 'edit-flower' && (
           <div>
-            <button onClick={openNewFlower} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '14px' }}>+ Add Flower Strain</button>
-            {TIER_ORDER.map(tier => {
-              const ts = sortItems(strains.filter(s => s.tiers?.[tier]?.active));
-              if (!ts.length) return null;
-              return (
-                <div key={tier} style={{ marginBottom: '16px' }}>
-                  <div style={{ background: '#2a2a45', color: C.text, fontWeight: 'bold', padding: '7px 12px', borderRadius: '4px 4px 0 0', fontSize: '12px', textTransform: 'uppercase' }}>{TIER_CFG[tier].label}</div>
-                  <div style={{ border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: '0 0 4px 4px', overflow: 'hidden' }}>
-                    {ts.map((s, i) => (
-                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: i % 2 === 0 ? C.panel : '#252540', borderBottom: `1px solid ${C.border}`, opacity: s.inStock === false ? 0.4 : 1 }}>
-                        <span style={{ color: TU[s.type], fontWeight: 'bold', width: '16px' }}>{s.type}</span>
-                        <span style={{ flex: 1, textDecoration: s.inStock === false ? 'line-through' : 'none' }}>{s.name}</span>
-                        {tier === 'thirdParty' && <span style={{ color: C.muted, fontSize: '11px', width: '30px' }}>{s.tiers[tier].price}</span>}
-                        <button onClick={() => toggleStock(s.id, false)} style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', width: '70px' }}>{s.inStock === false ? 'Out' : 'In Stock'}</button>
-                        <button onClick={() => openEdit(s, false)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
-                        <button onClick={() => deleteItem(s.id, false)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '3px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
-                      </div>
-                    ))}
+            <button onClick={openNewFlower} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '18px' }}>+ Add Flower Strain</button>
+            
+            {/* The 3-Column Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
+              {['I', 'H', 'S'].map(type => (
+                <div key={type}>
+                  {/* Column Header (INDICA, HYBRID, SATIVA) */}
+                  <div style={{ background: TU[type], color: '#111', fontWeight: 'bold', padding: '10px', borderRadius: '4px', textAlign: 'center', marginBottom: '16px', fontSize: '14px', letterSpacing: '1px' }}>
+                    {type === 'I' ? 'INDICA' : type === 'H' ? 'HYBRID' : 'SATIVA'}
                   </div>
+                  
+                  {/* Loop through Tiers inside this specific Column */}
+                  {TIER_ORDER.map(tier => {
+                    // Filter strains to match BOTH the column Type and the Tier
+                    const ts = sortItems(strains.filter(s => s.type === type && s.tiers?.[tier]?.active));
+                    if (!ts.length) return null;
+                    
+                    return (
+                      <div key={tier} style={{ marginBottom: '16px' }}>
+                        <div style={{ background: '#2a2a45', color: C.text, fontWeight: 'bold', padding: '7px 12px', borderRadius: '4px 4px 0 0', fontSize: '12px', textTransform: 'uppercase' }}>{TIER_CFG[tier].label}</div>
+                        <div style={{ border: `1px solid ${C.border}`, borderTop: 'none', borderRadius: '0 0 4px 4px', overflow: 'hidden' }}>
+                          {ts.map((s, i) => (
+                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 12px', background: i % 2 === 0 ? C.panel : '#252540', borderBottom: `1px solid ${C.border}`, opacity: s.inStock === false ? 0.4 : 1, flexWrap: 'wrap' }}>
+                              
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: '120px' }}>
+                                <span style={{ textDecoration: s.inStock === false ? 'line-through' : 'none' }}>{s.name}</span>
+                                {tier === 'thirdParty' && <span style={{ color: C.muted, fontSize: '11px' }}>{s.tiers[tier].price}</span>}
+                              </div>
+                              
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <button onClick={() => toggleStock(s.id, false)} style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', width: '60px' }}>{s.inStock === false ? 'Out' : 'In'}</button>
+                                <button onClick={() => openEdit(s, false)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
+                                <button onClick={() => deleteItem(s.id, false)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
+                              </div>
+
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        )}
+        )}         
 
         {tab === 'edit-extracts' && (
           <div>
