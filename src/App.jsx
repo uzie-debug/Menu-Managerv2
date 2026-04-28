@@ -143,7 +143,12 @@ function buildFlowerHtml(strains, menuType) {
       } else if (isEighths && isThirdParty) {
         return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr"><strong>${tierData.price || ''}</strong></td><td class="terp">${terpVal}</td></tr>`;
       } else {
-        return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr"><strong>$40</strong><br><span class="sub">2/$75</span></td><td class="terp">${terpVal}</td></tr>`;
+        // Check if this is the Caliente tier to apply the correct halves pricing
+        const halvesPriceHtml = sec.tier === 'caliente' 
+          ? '<strong>$30</strong><br><span class="sub">2/$55</span>'
+          : '<strong>$40</strong><br><span class="sub">2/$75</span>';
+
+        return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr">${halvesPriceHtml}</td><td class="terp">${terpVal}</td></tr>`;
       }
     }).join('');
     return `<table><thead><tr><td class="th-name" colspan="${cols}">${hdr}</td></tr><tr><td class="th-price" colspan="${cols}">${priceHdr}</td></tr>${colHdr}</thead><tbody>${rowsHtml}</tbody></table>`;
