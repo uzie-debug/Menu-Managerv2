@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-const [showHelp, setShowHelp] = useState(false);
+
 
 // ── Type colors ──────────────────────────────────────────────
 const TC = { I: '#6B5B95', H: '#4A7A4A', S: '#B5651D' }; // print
@@ -238,6 +238,12 @@ export default function MenuApp() {
   const [tab, setTab] = useState('edit-flower');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
+  
+  // PASTE IT HERE!
+  const [showHelp, setShowHelp] = useState(false);
+
+  // LOAD FROM LOCALSTORAGE
+  useEffect(() => {
 
   // LOAD FROM LOCALSTORAGE
   useEffect(() => {
