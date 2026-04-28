@@ -561,14 +561,13 @@ export default function MenuApp() {
              <div style={{ fontSize: '12px', color: C.good }}>✓ Ready to print</div>
             <button onClick={() => doPrint(tab)} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 22px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Open Print View</button>
           </div>
- )}
+)}
       </div>
 
-
+      {/* This renders the edit popup if it's active */}
       {editing && EditModal()}
       
     </div>
   );
 }
-  );
-} {/* Closes the MenuApp function */}
+
