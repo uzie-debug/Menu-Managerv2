@@ -244,9 +244,6 @@ export default function MenuApp() {
 
   // LOAD FROM LOCALSTORAGE
   useEffect(() => {
-
-  // LOAD FROM LOCALSTORAGE
-  useEffect(() => {
     const savedStrains = localStorage.getItem('purlife-strains-v2');
     const savedExtracts = localStorage.getItem('purlife-extracts-v2');
     if (savedStrains) {
@@ -564,13 +561,12 @@ export default function MenuApp() {
              <div style={{ fontSize: '12px', color: C.good }}>✓ Ready to print</div>
             <button onClick={() => doPrint(tab)} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 22px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Open Print View</button>
           </div>
-        )}
-        {/* This renders the edit popup if it's active */}
+       )}
+      </div> {/* Closes the inner padding container */}
+
+      {/* This renders the edit popup if it's active */}
       {editing && EditModal()}
       
-    </div>
+    </div> {/* Closes the main background container */}
   );
-}
-      </div>
-
-     
+} {/* Closes the MenuApp function */}
