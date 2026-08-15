@@ -423,6 +423,17 @@ export default function MenuApp() {
     }
     setEditing(null);
   };
+
+  // ── Inline tier editing (for the flattened edit view) ─────
+  const updateTierField = (strainId, tierKey, field, value) => {
+    const strain = strains.find(s => s.id === strainId);
+    if (!strain) return;
+    const newTiers = { ...strain.tiers, [tierKey]: { ...strain.tiers[tierKey], [field]: value } };
+    setStrains(prev => prev.map(s => s.id === strainId ? { ...s, tiers: newTiers } : s));
+    supabase.from('strains').update({ tiers: newTiers }).eq('id', strainId)
+      .then(({ error }) => { if (error) console.error('Inline update failed:', error); });
+  };
+
   const exportBackup = () => {
   // Package up the current state
   const backupData = {
@@ -570,11 +581,11 @@ export default function MenuApp() {
           Menu Manager Tutorial
         </h2>
         <ul style={{ lineHeight: '1.8', fontSize: '14px', paddingLeft: '20px' }}>
-          <li><strong>Adding Inventory:</strong> Click "Add Strain" or "Add Extract" to create a new database entry.</li>
-          <li><strong>Flower Tiers:</strong> Check the boxes for Reserve, Premium, etc., to assign a strain to a tier. You can assign one strain to multiple tiers!</li>
-          <li><strong>Third-Party Pricing:</strong> If you select the "Third Party" tier, a custom price box will appear for that specific item.</li>
-          <li><strong>In-Stock Toggle:</strong> Use the ON/OFF button to temporarily hide an item from the printed menu without deleting it from the database.</li>
-          <li><strong>Backups:</strong> Click the "Backup JSON" button to download your menu data. Do this regularly to prevent data loss!</li>
+          <li><strong>Sizes:</strong> Use the ⅛ ¼ ½ checkboxes on each strain to toggle what sizes are available. Changes save automatically.</li>
+          <li><strong>THC %:</strong> Type the THC percentage directly in the box next to each strain. It saves as you type.</li>
+          <li><strong>In/Out:</strong> The green "In" button marks a strain as in stock. Click it to toggle to "Out" — the strain stays in the system but won't print.</li>
+          <li><strong>✎ Edit:</strong> Opens the detail editor for lineage, terpenes, and tier assignments (the stuff that rarely changes).</li>
+          <li><strong>Synced to Cloud:</strong> All changes sync automatically. No more JSON exports needed — but backups are still available just in case.</li>
         </ul>
         <button 
           onClick={() => setShowHelp(false)} 
@@ -631,53 +642,101 @@ export default function MenuApp() {
        {tab === 'edit-flower' && (
           <div>
             <button onClick={openNewFlower} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '18px' }}>+ Add Flower Strain</button>
-            
-            {/* The 3-Column Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
-              {['I', 'H', 'S'].map(type => (
-                <div key={type} style={{ background: '#1c1c31', borderRadius: '8px', padding: '16px', borderTop: `4px solid ${TU[type]}`, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
-                  
-                  {/* Column Header (INDICA, HYBRID, SATIVA) */}
-                  <div style={{ color: TU[type], fontWeight: 'bold', textAlign: 'center', marginBottom: '20px', fontSize: '18px', letterSpacing: '2px' }}>
-                    {type === 'I' ? 'INDICA' : type === 'H' ? 'HYBRID' : 'SATIVA'}
-                  </div>
-                  
-                  {/* Loop through Tiers inside this specific Column */}
-                  {TIER_ORDER.map(tier => {
-                    const ts = sortItems(strains.filter(s => s.type === type && s.tiers?.[tier]?.active));
-                    if (!ts.length) return null;
-                    
-                    const tierBg = TIER_COLORS[tier] || '#2a2a45';
-                    
-                    return (
-                      <div key={tier} style={{ marginBottom: '16px', background: C.panel, borderRadius: '6px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
-                        <div style={{ background: tierBg, color: '#fff', fontWeight: 'bold', padding: '8px 12px', fontSize: '12px', textTransform: 'uppercase', textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}>
-                           {TIER_CFG[tier].label}
-                        </div>
-                        <div style={{ padding: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          {ts.map((s, i) => (
-                            <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', padding: '8px 10px', background: '#1a1a2e', borderRadius: '4px', opacity: s.inStock === false ? 0.5 : 1 }}>
-                              
-                              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-                                <span style={{ textDecoration: s.inStock === false ? 'line-through' : 'none', fontWeight: 'bold', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
-                                {tier === 'thirdParty' && <span style={{ color: C.muted, fontSize: '11px', marginTop: '2px' }}>{s.tiers[tier].price}</span>}
-                              </div>
-                              
-                              <div style={{ display: 'flex', gap: '4px' }}>
-                                <button onClick={() => toggleStock(s.id, false)} style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '5px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>{s.inStock === false ? 'Out' : 'In'}</button>
-                                <button onClick={() => openEdit(s, false)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '5px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
-                                <button onClick={() => deleteItem(s.id, false)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '5px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
-                              </div>
 
+            {/* Tier-organized list with inline controls */}
+            {TIER_ORDER.map(tier => {
+              const tierStrains = sortItems(strains.filter(s => s.tiers?.[tier]?.active));
+              if (!tierStrains.length) return null;
+              const tierBg = TIER_COLORS[tier] || '#2a2a45';
+              const isThirdParty = tier === 'thirdParty';
+
+              return (
+                <div key={tier} style={{ marginBottom: '20px', background: C.panel, borderRadius: '8px', overflow: 'hidden', border: `1px solid ${C.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
+                  {/* Tier Header */}
+                  <div style={{ background: tierBg, color: '#fff', fontWeight: 'bold', padding: '10px 16px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px', textShadow: '0 1px 2px rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>{TIER_CFG[tier].label}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 'normal', opacity: 0.8 }}>{tierStrains.length} strain{tierStrains.length !== 1 ? 's' : ''}</span>
+                  </div>
+
+                  {/* Column Labels */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 120px 80px 100px 90px', gap: '8px', padding: '8px 12px 4px', fontSize: '10px', color: C.muted, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: `1px solid ${C.border}`, alignItems: 'center' }}>
+                    <div></div>
+                    <div>Strain</div>
+                    <div style={{ textAlign: 'center' }}>Sizes</div>
+                    <div style={{ textAlign: 'center' }}>THC %</div>
+                    {isThirdParty && <div style={{ textAlign: 'center' }}>Price</div>}
+                    {!isThirdParty && <div></div>}
+                    <div style={{ textAlign: 'center' }}>Actions</div>
+                  </div>
+
+                  {/* Strain Rows */}
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    {tierStrains.map((s, i) => {
+                      const td = s.tiers[tier];
+                      return (
+                        <div key={s.id} style={{
+                          display: 'grid', gridTemplateColumns: '36px 1fr 120px 80px 100px 90px', gap: '8px',
+                          padding: '8px 12px', alignItems: 'center',
+                          background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
+                          opacity: s.inStock === false ? 0.45 : 1,
+                          borderBottom: `1px solid ${C.border}22`,
+                        }}>
+                          {/* Type Badge */}
+                          <div style={{ color: TU[s.type], fontWeight: 'bold', fontSize: '15px', textAlign: 'center' }}>{s.type}</div>
+
+                          {/* Strain Name */}
+                          <div style={{ fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: s.inStock === false ? 'line-through' : 'none' }}>{s.name}</div>
+
+                          {/* Size Checkboxes */}
+                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                            {[['eighths', '⅛'], ['quarters', '¼'], ['halves', '½']].map(([field, label]) => (
+                              <label key={field} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer', fontSize: '13px', color: td[field] ? '#fff' : C.muted }}>
+                                <input type="checkbox" checked={!!td[field]} onChange={() => updateTierField(s.id, tier, field, !td[field])}
+                                  style={{ accentColor: tierBg, cursor: 'pointer', width: '15px', height: '15px' }} />
+                                <span>{label}</span>
+                              </label>
+                            ))}
+                          </div>
+
+                          {/* THC Input */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
+                            <input
+                              type="text" value={td.thc || ''} placeholder="—"
+                              onChange={e => updateTierField(s.id, tier, 'thc', e.target.value)}
+                              style={{ width: '48px', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '4px 6px', borderRadius: '3px', fontSize: '12px', textAlign: 'center' }}
+                            />
+                            <span style={{ fontSize: '11px', color: C.muted }}>%</span>
+                          </div>
+
+                          {/* Price (Third Party) or spacer */}
+                          {isThirdParty ? (
+                            <div style={{ display: 'flex', justifyContent: 'center' }}>
+                              <input
+                                type="text" value={td.price || ''} placeholder="$0"
+                                onChange={e => updateTierField(s.id, tier, 'price', e.target.value)}
+                                style={{ width: '64px', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '4px 6px', borderRadius: '3px', fontSize: '12px', textAlign: 'center' }}
+                              />
                             </div>
-                          ))}
+                          ) : <div></div>}
+
+                          {/* Action Buttons */}
+                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
+                            <button onClick={() => toggleStock(s.id, false)} title={s.inStock === false ? 'Mark In Stock' : 'Mark Out of Stock'}
+                              style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>
+                              {s.inStock === false ? 'Out' : 'In'}
+                            </button>
+                            <button onClick={() => openEdit(s, false)} title="Edit details (lineage, terpenes, tiers)"
+                              style={{ background: '#35355a', color: C.text, border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>✎</button>
+                            <button onClick={() => deleteItem(s.id, false)} title="Delete strain"
+                              style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
         )}
                 
