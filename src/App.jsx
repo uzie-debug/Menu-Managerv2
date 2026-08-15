@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase, strainFromDb, strainToDb, extractFromDb, extractToDb } from './supabaseClient';
 
 
 // ── Type colors ──────────────────────────────────────────────
@@ -11,41 +12,52 @@ const TIER_CFG = {
   reserve: { label: 'Reserve', eighthsHeader: 'PURLIFE RESERVE · 4g SUPER EIGHTHS', eighthsPrice: '1 for $20 · 4 for $70 · 8 for $130', halvesHeader: 'PURLIFE RESERVE · ½ oz', halvesPrice: '$40 each · 2 for $75' },
   premium: { label: 'Premium', eighthsHeader: 'PURLIFE PREMIUM · 4g SUPER EIGHTHS', eighthsPrice: '1 for $20 · 4 for $70 · 8 for $130', halvesHeader: 'PURLIFE PREMIUM · ½ oz', halvesPrice: '$40 each · 2 for $75' },
   caliente: { label: 'Caliente', eighthsHeader: 'CALIENTE BRAND · 3.5g', eighthsPrice: '$9 each', halvesHeader: 'CALIENTE BRAND · ½ oz', halvesPrice: '$30 each · 2 for $55' },
+  orale: { label: 'Orale', eighthsHeader: 'ORALE BRAND · 3.5g', eighthsPrice: 'PRICED AS MARKED', halvesHeader: 'ORALE BRAND · ½ oz', halvesPrice: 'PRICED AS MARKED' }, // TODO: fill in real pricing
   thirdParty: { label: 'Third Party', eighthsHeader: 'THIRD PARTY BRANDS · 3.5g', eighthsPrice: 'PRICED AS MARKED', halvesHeader: null, halvesPrice: null },
 };
-const TIER_ORDER = ['reserve', 'premium', 'caliente', 'thirdParty'];
+const TIER_ORDER = ['reserve', 'premium', 'caliente', 'orale', 'thirdParty'];
 
 // Add this new color map right here!
 const TIER_COLORS = {
   reserve: '#D4AF37',   // Gold
   premium: '#3b9b9b',   // Teal
   caliente: '#d9534f',  // Red
+  orale: '#e08a3c',     // Warm Orange
   thirdParty: '#6a6a8c' // Muted Purple/Grey
 };
 
 const mkId = () => Math.random().toString(36).slice(2, 9);
 
 // ── Data Migration Tool ──────────────────────────────────────
+const EMPTY_TIER = { active: false, eighths: false, quarters: false, halves: false, price: '', thc: '' };
+const EMPTY_TIERS = () => ({
+  reserve: { ...EMPTY_TIER }, premium: { ...EMPTY_TIER }, caliente: { ...EMPTY_TIER },
+  orale: { ...EMPTY_TIER }, thirdParty: { ...EMPTY_TIER }
+});
+
 const migrateStrain = (s) => {
   const { flags, blanks, ...cleanS } = s; // Strips out deprecated flag data
   
+  // Already in new format — just ensure orale + quarters exist on each tier
   if (cleanS.tiers && cleanS.tiers.reserve && cleanS.tiers.reserve.thc !== undefined) {
-    return { ...cleanS, inStock: cleanS.inStock !== false }; 
+    const patched = { ...EMPTY_TIERS() };
+    for (const key of Object.keys(patched)) {
+      if (cleanS.tiers[key]) {
+        patched[key] = { ...patched[key], ...cleanS.tiers[key], quarters: cleanS.tiers[key].quarters ?? false };
+      }
+    }
+    return { ...cleanS, tiers: patched, inStock: cleanS.inStock !== false }; 
   }
   
-  const t = {
-    reserve: { active: false, eighths: false, halves: false, price: '', thc: '' },
-    premium: { active: false, eighths: false, halves: false, price: '', thc: '' },
-    caliente: { active: false, eighths: false, halves: false, price: '', thc: '' },
-    thirdParty: { active: false, eighths: false, halves: false, price: '', thc: '' }
-  };
+  // Old single-tier format → convert
+  const t = EMPTY_TIERS();
   
   if (cleanS.tier && t[cleanS.tier]) {
-    t[cleanS.tier] = { active: true, eighths: !!cleanS.hasEighths, halves: !!cleanS.hasHalves, price: cleanS.price || '', thc: cleanS.thc || '' };
+    t[cleanS.tier] = { active: true, eighths: !!cleanS.hasEighths, quarters: false, halves: !!cleanS.hasHalves, price: cleanS.price || '', thc: cleanS.thc || '' };
   } else if (cleanS.tiers) {
     for (const key of Object.keys(t)) {
       if (cleanS.tiers[key]) {
-        t[key] = { ...cleanS.tiers[key], thc: cleanS.thc || '' };
+        t[key] = { ...t[key], ...cleanS.tiers[key], quarters: cleanS.tiers[key].quarters ?? false, thc: cleanS.tiers[key].thc || cleanS.thc || '' };
       }
     }
   }
@@ -267,12 +279,26 @@ export default function MenuApp() {
       if (!file) return;
       
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         try {
           const data = JSON.parse(event.target.result);
-          if (data.strains) setStrains(data.strains);
-          if (data.extracts) setExtracts(data.extracts);
-          alert('Backup successfully imported! Menu restored.');
+          const importedStrains = data.strains ? data.strains.map(migrateStrain) : [];
+          const importedExtracts = data.extracts ? data.extracts.map(s => ({ ...s, inStock: s.inStock !== false })) : [];
+
+          if (importedStrains.length) {
+            setStrains(importedStrains);
+            // Clear and re-push to Supabase
+            await supabase.from('strains').delete().neq('id', '');
+            const { error } = await supabase.from('strains').upsert(importedStrains.map(strainToDb));
+            if (error) console.error('Import strains to Supabase failed:', error);
+          }
+          if (importedExtracts.length) {
+            setExtracts(importedExtracts);
+            await supabase.from('extracts').delete().neq('id', '');
+            const { error } = await supabase.from('extracts').upsert(importedExtracts.map(extractToDb));
+            if (error) console.error('Import extracts to Supabase failed:', error);
+          }
+          alert('Backup imported and synced to cloud!');
         } catch (err) {
           alert('Error reading backup file. Make sure it is a valid JSON backup.');
         }
@@ -284,36 +310,83 @@ export default function MenuApp() {
     input.click();
   };
 
-  // LOAD FROM LOCALSTORAGE
+  // LOAD FROM SUPABASE (with one-time localStorage migration)
   useEffect(() => {
-    const savedStrains = localStorage.getItem('purlife-strains-v2');
-    const savedExtracts = localStorage.getItem('purlife-extracts-v2');
-    if (savedStrains) {
-      try { setStrains(JSON.parse(savedStrains).map(migrateStrain)); } catch (e) { }
-    }
-    if (savedExtracts) {
-      try { setExtracts(JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false }))); } catch (e) { }
-    }
-    setLoaded(true);
-  }, []);
+    const loadData = async () => {
+      try {
+        const [{ data: dbStrains, error: sErr }, { data: dbExtracts, error: eErr }] = await Promise.all([
+          supabase.from('strains').select('*').order('name'),
+          supabase.from('extracts').select('*').order('name'),
+        ]);
+        if (sErr) throw sErr;
+        if (eErr) throw eErr;
 
-  // SAVE TO LOCALSTORAGE
-  useEffect(() => {
-    if (!loaded) return;
-    localStorage.setItem('purlife-strains-v2', JSON.stringify(strains));
-    localStorage.setItem('purlife-extracts-v2', JSON.stringify(extracts));
-  }, [strains, extracts, loaded]);
+        if ((dbStrains && dbStrains.length > 0) || (dbExtracts && dbExtracts.length > 0)) {
+          // Supabase has data — use it
+          if (dbStrains?.length) setStrains(dbStrains.map(strainFromDb).map(migrateStrain));
+          if (dbExtracts?.length) setExtracts(dbExtracts.map(extractFromDb));
+        } else {
+          // Supabase is empty — migrate from localStorage or seed defaults
+          let migratedStrains = INITIAL_STRAINS;
+          let migratedExtracts = INITIAL_EXTRACTS;
+          const savedStrains = localStorage.getItem('purlife-strains-v2');
+          const savedExtracts = localStorage.getItem('purlife-extracts-v2');
+          if (savedStrains) try { migratedStrains = JSON.parse(savedStrains).map(migrateStrain); } catch {}
+          if (savedExtracts) try { migratedExtracts = JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false })); } catch {}
+
+          // Push to Supabase
+          const { error: pushS } = await supabase.from('strains').upsert(migratedStrains.map(strainToDb));
+          const { error: pushE } = await supabase.from('extracts').upsert(migratedExtracts.map(extractToDb));
+          if (pushS) console.error('Strain migration error:', pushS);
+          if (pushE) console.error('Extract migration error:', pushE);
+
+          setStrains(migratedStrains);
+          setExtracts(migratedExtracts);
+          console.log('✅ Migrated localStorage data to Supabase');
+        }
+      } catch (err) {
+        console.error('Supabase load failed, falling back to localStorage:', err);
+        const savedStrains = localStorage.getItem('purlife-strains-v2');
+        const savedExtracts = localStorage.getItem('purlife-extracts-v2');
+        if (savedStrains) try { setStrains(JSON.parse(savedStrains).map(migrateStrain)); } catch {}
+        if (savedExtracts) try { setExtracts(JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false }))); } catch {}
+      }
+      setLoaded(true);
+    };
+    loadData();
+  }, []);
 
   const deleteItem = (id, isExtract) => {
     if (window.confirm('Remove this item entirely? (Hint: You can just mark it "Out of Stock" instead!)')) {
+      const table = isExtract ? 'extracts' : 'strains';
       if (isExtract) setExtracts(p => p.filter(s => s.id !== id));
       else setStrains(p => p.filter(s => s.id !== id));
+      supabase.from(table).delete().eq('id', id).then(({ error }) => {
+        if (error) console.error(`Delete from ${table} failed:`, error);
+      });
     }
   };
 
   const toggleStock = (id, isExtract) => {
-    if (isExtract) setExtracts(p => p.map(s => s.id === id ? { ...s, inStock: s.inStock === false ? true : false } : s));
-    else setStrains(p => p.map(s => s.id === id ? { ...s, inStock: s.inStock === false ? true : false } : s));
+    let newVal;
+    if (isExtract) {
+      setExtracts(p => p.map(s => {
+        if (s.id === id) { newVal = s.inStock === false; return { ...s, inStock: newVal }; }
+        return s;
+      }));
+    } else {
+      setStrains(p => p.map(s => {
+        if (s.id === id) { newVal = s.inStock === false; return { ...s, inStock: newVal }; }
+        return s;
+      }));
+    }
+    const table = isExtract ? 'extracts' : 'strains';
+    // newVal is captured by the setter above; use a fresh lookup
+    const current = isExtract ? extracts.find(s => s.id === id) : strains.find(s => s.id === id);
+    const toggled = current ? current.inStock === false : true;
+    supabase.from(table).update({ in_stock: toggled }).eq('id', id).then(({ error }) => {
+      if (error) console.error(`Toggle stock in ${table} failed:`, error);
+    });
   };
 
   const openEdit = (s, isExtract) => { setEditing({ ...s, isExtract }); setForm({ ...s }); };
@@ -323,10 +396,11 @@ export default function MenuApp() {
     setForm({ 
       id: mkId(), type: 'H', name: '', lineage: '', terpenes: '', inStock: true,
       tiers: {
-        reserve: { active: true, eighths: true, halves: true, price: '', thc: '' },
-        premium: { active: false, eighths: true, halves: true, price: '', thc: '' },
-        caliente: { active: false, eighths: true, halves: true, price: '', thc: '' },
-        thirdParty: { active: false, eighths: true, halves: false, price: '', thc: '' }
+        reserve: { active: true, eighths: true, quarters: false, halves: true, price: '', thc: '' },
+        premium: { active: false, eighths: true, quarters: false, halves: true, price: '', thc: '' },
+        caliente: { active: false, eighths: true, quarters: false, halves: true, price: '', thc: '' },
+        orale: { active: false, eighths: true, quarters: false, halves: true, price: '', thc: '' },
+        thirdParty: { active: false, eighths: true, quarters: false, halves: false, price: '', thc: '' }
       }
     }); 
   };
@@ -337,9 +411,15 @@ export default function MenuApp() {
     if (editing.isExtract) {
       if (editing.isNew) setExtracts(p => [...p, form]);
       else setExtracts(p => p.map(s => s.id === form.id ? form : s));
+      supabase.from('extracts').upsert(extractToDb(form)).then(({ error }) => {
+        if (error) console.error('Save extract failed:', error);
+      });
     } else {
       if (editing.isNew) setStrains(p => [...p, form]);
       else setStrains(p => p.map(s => s.id === form.id ? form : s));
+      supabase.from('strains').upsert(strainToDb(form)).then(({ error }) => {
+        if (error) console.error('Save strain failed:', error);
+      });
     }
     setEditing(null);
   };
@@ -432,7 +512,7 @@ export default function MenuApp() {
                   </div>
 
                   <div style={{ display: 'flex', gap: '20px' }}>
-                    {[['eighths', 'In Eighths'], ['halves', 'In Halves']].map(([f, l]) => (
+                    {[['eighths', 'In Eighths'], ['quarters', 'In Quarters'], ['halves', 'In Halves']].map(([f, l]) => (
                       <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: C.text, cursor: 'pointer', fontSize: '13px' }}>
                         <input type="checkbox" checked={!!form.tiers[t][f]} onChange={e => {
                           const checked = e.target.checked;
