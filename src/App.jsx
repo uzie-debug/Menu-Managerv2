@@ -44,49 +44,61 @@ const sortItems = arr => [...arr].sort((a, b) => (TO[a.type] ?? 9) - (TO[b.type]
 
 // ── Print HTML Builders ──────────────────────────────────────
 // Takes rows straight out of v_print_menu (one row per strain per weight)
-// for a single print_page, and renders one table per subheader.
+// for a single print_page, and renders a section per brand, then a table per
+// subheader inside it.
 //
-// The page layout is data, not code: grouping comes from print_page /
-// print_subhead / weight_sort in weight_options. Moving quarters onto their
-// own page is a row edit in that table, not a change here.
-function buildFlowerHtml(rows, pageId, pageTitle) {
+// The page layout is data, not code: brand order comes from brands.sort_order,
+// and grouping comes from print_page / print_subhead / weight_sort in
+// weight_options. Moving quarters onto their own page, or reordering the
+// brands, is a row edit rather than a change here.
+function buildFlowerHtml(rows, pageId, pageTitle, brandOrder) {
   // A row with a weight but no price would print a blank price cell on a
-  // customer-facing menu. Drop it here and count it, so the app can warn
-  // before anything reaches the printer.
+  // customer-facing menu. Drop it here; doPrint warns about them first.
   const pageRows = rows.filter(r =>
     r.print_page === pageId && r.in_stock !== false && r.price != null);
 
-  // null subhead prints first, then the rest in weight_sort order.
-  const subheads = [];
-  for (const r of pageRows.slice().sort((a, b) => a.weight_sort - b.weight_sort)) {
-    const key = r.print_subhead ?? null;
-    if (!subheads.some(s => s.key === key)) subheads.push({ key, label: r.print_subhead });
-  }
+  // Brands that actually have something on this page, in sort_order.
+  const sections = brandOrder
+    .filter(b => pageRows.some(r => r.brand_id === b.id))
+    .map(b => ({ label: b.label, rows: pageRows.filter(r => r.brand_id === b.id) }));
 
-  const tables = subheads.map(sub => {
-    const items = pageRows
-      .filter(r => (r.print_subhead ?? null) === sub.key)
-      .sort((a, b) =>
-        (a.weight_sort - b.weight_sort) ||
-        (TO[a.type] ?? 9) - (TO[b.type] ?? 9) ||
-        a.name.localeCompare(b.name)
-      );
-    if (!items.length) return '';
+  // A strain with no brand still has to print rather than vanish silently.
+  const unbranded = pageRows.filter(r => !r.brand_id);
+  if (unbranded.length) sections.push({ label: 'Other', rows: unbranded });
 
-    const rowsHtml = items.map((r, i) => {
+  const renderTable = (items, subLabel) => {
+    const sorted = items.slice().sort((a, b) =>
+      (a.weight_sort - b.weight_sort) ||
+      (TO[a.type] ?? 9) - (TO[b.type] ?? 9) ||
+      a.name.localeCompare(b.name)
+    );
+    const rowsHtml = sorted.map((r, i) => {
       const bg = i % 2 === 0 ? '' : 'style="background:#ebebeb"';
       const nameCell = `<strong>${esc(r.name)}</strong>${r.lineage ? `<br><span class="lin">${esc(r.lineage)}</span>` : ''}`;
       const thcStr = r.thc == null ? '' : `${r.thc}%`;
       return `<tr ${bg}><td class="tc" style="color:${TC[r.type]}">${esc(r.type)}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr"><strong>${money(r.price)}</strong></td><td class="terp">${esc(r.terpenes || '')}</td></tr>`;
     }).join('');
-
-    const head = sub.label
-      ? `<tr><td class="th-name" colspan="5">${esc(sub.label.toUpperCase())}</td></tr>`
+    const sub = subLabel
+      ? `<tr><td class="sub-hdr" colspan="5">${esc(subLabel.toUpperCase())}</td></tr>`
       : '';
-    return `<table><thead>${head}<tr class="chdr"><th>TYPE</th><th>STRAIN · LINEAGE</th><th>THC</th><th>PRICE</th><th>COMMONLY DOMINANT TERPENES</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+    return `<table><thead>${sub}<tr class="chdr"><th>TYPE</th><th>STRAIN · LINEAGE</th><th>THC</th><th>PRICE</th><th>COMMONLY DOMINANT TERPENES</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  };
+
+  const tables = sections.map(sec => {
+    // null subhead prints first, then the rest in weight_sort order.
+    const subheads = [];
+    for (const r of sec.rows.slice().sort((a, b) => a.weight_sort - b.weight_sort)) {
+      const key = r.print_subhead ?? null;
+      if (!subheads.some(s => s.key === key)) subheads.push({ key, label: r.print_subhead });
+    }
+    const inner = subheads
+      .map(s => renderTable(sec.rows.filter(r => (r.print_subhead ?? null) === s.key), s.label))
+      .join('');
+    return `<div class="brand-box"><div class="brand-title">${esc(sec.label.toUpperCase())}</div>${inner}</div>`;
   }).join('');
 
   const body = tables || '<p style="text-align:center;color:#888;padding:40px 0">Nothing in stock for this page.</p>';
+
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PurLife – ${esc(pageTitle)}</title>
 <style>
@@ -94,7 +106,10 @@ function buildFlowerHtml(rows, pageId, pageTitle) {
 .store{font-size:18pt;font-weight:bold;text-align:center;margin-bottom:3px} .ttl{font-size:12pt;font-weight:bold;text-align:center;color:#2e2e2e;margin-bottom:5px}
 hr{border:none;border-top:1px solid #2e2e2e;margin-bottom:4px} .leg{font-size:8pt;color:#555;text-align:center;margin-bottom:8px}
 table{width:100%;border-collapse:collapse;margin-bottom:10px}
-.th-name td,td.th-name{background:#2e2e2e;color:#fff;font-weight:bold;font-size:10pt;padding:5px 6px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.brand-box{border:2px solid #2e2e2e;padding:10px;margin-bottom:14px;page-break-inside:avoid;border-radius:4px}
+.brand-title{background:#2e2e2e;color:#fff;font-size:12pt;font-weight:bold;text-align:center;padding:4px;margin:-10px -10px 10px -10px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.brand-box table:last-child{margin-bottom:0}
+.sub-hdr{background:#666;color:#fff;font-weight:bold;font-size:9pt;padding:4px 6px;text-align:center;print-color-adjust:exact;-webkit-print-color-adjust:exact}
 .chdr th{background:#e8e8e8;font-size:7pt;color:#555;padding:3px 5px;text-align:left;border-bottom:1px solid #888;font-weight:bold;print-color-adjust:exact;-webkit-print-color-adjust:exact}
 tbody tr td{padding:3px 5px;border-bottom:1px solid #ccc;vertical-align:middle}
 .tc{font-weight:bold;font-size:9.5pt;text-align:center;width:5%} .ctr{text-align:center}
@@ -518,7 +533,7 @@ function MenuApp() {
         `${[...new Set(skipped.map(r => `${r.name} — ${r.weight_label}`))].join('\n')}\n\nPrint anyway?`
       )) return;
 
-      html = buildFlowerHtml(rows, pageId, pageTitle);
+      html = buildFlowerHtml(rows, pageId, pageTitle, brands);
     }
     const w = window.open('', '_blank');
     if (w) { w.document.write(html); w.document.close(); }
