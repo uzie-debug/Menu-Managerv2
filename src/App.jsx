@@ -1,5 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase, strainFromDb, strainToDb, extractFromDb, extractToDb } from './supabaseClient';
+import { useAuth } from './AuthContext';
+import Login from './Login';
+import { C, TAP } from './theme';
 
 
 // ── Type colors ──────────────────────────────────────────────
@@ -65,55 +68,6 @@ const migrateStrain = (s) => {
   const { tier, hasEighths, hasHalves, price, thc, ...rest } = cleanS; 
   return { ...rest, tiers: t, inStock: cleanS.inStock !== false };
 };
-
-// ── Initial Data ─────────────────────────────────────────────
-const RAW_INITIAL_STRAINS = [
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Northern Lights', thc: '', lineage: 'Afghani × Thai Landrace', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'L.A. Banana Cake', thc: '', lineage: 'L.A. Kush Cake × Banana Punch', terpenes: 'Limonene · B-Caryophyllene · B-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Chicken n’ Wafflez', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Chocolate Waffles', thc: '', lineage: 'L.A. Amnesia × Thin Mints', terpenes: 'B-Caryophyllene · Terpinolene · Ocimene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Dark Phoenix', thc: '', lineage: 'Trainwreck × Jack Herrer', terpenes: 'Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Superboof', thc: '', lineage: 'Black Cherry Punch × Tropicana Cookies', terpenes: 'D-Limonene · B-Caryophyllene · Nerolidol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Alien OG', thc: '', lineage: 'Tahoe OG × Alien Kush', terpenes: 'Limonene · B-Caryophyllene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Mystery Mix', thc: '', lineage: 'Mystery Machine × Cake Mix', terpenes: 'B-Caryophyllene · Limonene · Nerolidol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Purple Octane x Jealousy', thc: '', lineage: 'Biscotti × Sherb Bx1 × Jealousy F2', terpenes: 'D-Limonene · B-Caryophyllene · Linalool · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Grand Master Kush', thc: '', lineage: 'Kush × Bubba Kush', terpenes: 'Myrcene · Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Coconut Milk', thc: '', lineage: 'Tropical Smoothie × Cereal Milk', terpenes: 'Myrcene · Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Hardcore OG', thc: '', lineage: 'Hardcore OG × Big Bud × DJ Short Blueberry', terpenes: 'D-Limonene · Linalool · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Irish Cannonball x Blue Dream', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Zack’s Cake', thc: '', lineage: 'Zack’s Pie × Jungle Cake', terpenes: 'B-Caryophyllene · D-Limonene · A-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Zkittles x Afghani', thc: '', lineage: 'Zkittles × Afghani', terpenes: 'Limonene · Myrcene · Linalool', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Don Mega', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Brain Freeze', thc: '', lineage: 'Legends Ultimate Indica × Cinderella 99', terpenes: 'Limonene · B-Caryophyllene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Whiplash', thc: '', lineage: 'M8 × Lebanon 3', terpenes: 'Myrcene · B-Caryophyllene · Guaiol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Seriotica', thc: '', lineage: 'Serious Mimosa × Cookies', terpenes: 'Limonene · A-Pinene · B-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Hypothermia', thc: '', lineage: 'Blunicorn × Slurricane 23', terpenes: 'Ocimene · A-Pinene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Hi-Fi 4G', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Hawaiian Dream', thc: '', lineage: 'Blue Dream × Mauie Wowie', terpenes: 'Terpinolene · B-Pinene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Gorilla Cream', thc: '', lineage: 'GG4 × Cookies And Cream × Big Bud', terpenes: 'Myrcene · B-Caryophyllene · Limonene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Divine Frost', thc: '', lineage: 'Divine Gelato × Permafrost', terpenes: 'B-Caryophyllene · Limonene · A-Humulene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Cap Junky', thc: '', lineage: 'Alien Cookies × Kush Mints', terpenes: 'D-Limonene · B-Caryophyllene · Linalool', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Banana Kush', thc: '', lineage: 'Ghost OG × Skunk × Haze', terpenes: 'A-Pinene · Linalool · Guaiol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Lemon Suit Larry', thc: '', lineage: 'Lemon Larry × Commerce City Kush', terpenes: 'Myrcene · Terpinolene · Ocimene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Tropical Cake', thc: '', lineage: 'Tropicana Cookie × Wedding Cake', terpenes: 'B-Caryophyllene · Limonene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Açai Cookies', thc: '', lineage: 'Açaí Mints × Banana Punch', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Candied Taters', thc: '', lineage: 'Potato Kush × Candied Lemons', terpenes: 'Camphene · Terpinolene · A-Terpinolene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Champaya', thc: '', lineage: 'Papaya × Mimosa V6', terpenes: 'Limonene · A-Pinene · B-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Chapel of Love', thc: '', lineage: 'F1 Durban × Kush Mints × Gushers', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Cherry Animal Punch', thc: '', lineage: 'Animal Cookies × Cherry AK47 × Purple Punch', terpenes: 'B-Caryophyllene · Limonene · Humulene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Countree Grammar', thc: '', lineage: 'Açaí Mints × Banana Punch', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Critical Glue', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Franco’s Lemon Cheese', thc: '', lineage: 'Lemon Haze × Exodus Cheese', terpenes: 'B-Caryophyllene · Myrcene · Limonene', hasEighths: true, hasHalves: true }
-];
-
-const INITIAL_STRAINS = RAW_INITIAL_STRAINS.map(migrateStrain);
-
-const INITIAL_EXTRACTS = [
-  { id: mkId(), category: 'vape', type: 'H', brand: 'Purlife', name: 'Blue Dream', extract: 'Distillate', texture: '', size: '1g', price: '$35', hasBattery: true, inStock: true },
-  { id: mkId(), category: 'vape', type: 'S', brand: 'Cookies', name: 'Gary Payton', extract: 'Live Resin', texture: '', size: '0.5g', price: '$45', hasBattery: false, inStock: true },
-  { id: mkId(), category: 'concentrate', type: 'I', brand: 'DabCo', name: 'OG Kush', extract: 'Cured Resin', texture: 'Badder', size: '1g', price: '$30', hasBattery: false, inStock: true }
-];
 
 // ── Helpers ──────────────────────────────────────────────────
 const sortItems = arr => [...arr].sort((a, b) => (TO[a.type] ?? 9) - (TO[b.type] ?? 9));
@@ -252,14 +206,33 @@ ${vapesHtml}${concHtml}
 <div class="foot">Prices subject to change</div><script>window.onload=function(){window.print()}</script></body></html>`;
 }
 
-// ── UI theme ─────────────────────────────────────────────────
-const C = { bg: '#18182a', panel: '#21213a', border: '#35355a', text: '#ccc8e8', muted: '#7a77a0', accent: '#7c6fcd', danger: '#c05050', good: '#5a9a5a' };
-
 // ── Main app ─────────────────────────────────────────────────
-export default function MenuApp() {
-  const [strains, setStrains] = useState(INITIAL_STRAINS);
-  const [extracts, setExtracts] = useState(INITIAL_EXTRACTS);
+export default function App() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: C.bg, color: C.muted,
+        fontFamily: 'system-ui,sans-serif',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+      }}>Loading…</div>
+    );
+  }
+
+  // Anon reads are gone — without a session every query returns zero rows, so
+  // there is nothing useful to render behind this gate.
+  if (!session) return <Login />;
+
+  return <MenuApp />;
+}
+
+function MenuApp() {
+  const { user, isMenuEditor, signOut } = useAuth();
+  const [strains, setStrains] = useState([]);
+  const [extracts, setExtracts] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [tab, setTab] = useState('edit-flower');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
@@ -281,6 +254,9 @@ export default function MenuApp() {
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
+          // This wipes and replaces both tables. Given there is no undo, make
+          // the operator say yes twice.
+          if (!window.confirm('This DELETES every strain and extract in the cloud and replaces them with the file. Continue?')) return;
           const data = JSON.parse(event.target.result);
           const importedStrains = data.strains ? data.strains.map(migrateStrain) : [];
           const importedExtracts = data.extracts ? data.extracts.map(s => ({ ...s, inStock: s.inStock !== false })) : [];
@@ -310,46 +286,25 @@ export default function MenuApp() {
     input.click();
   };
 
-  // LOAD FROM SUPABASE (with one-time localStorage migration)
+  // LOAD FROM SUPABASE
+  //
+  // Supabase is the only source of truth now. The old seed-on-empty and
+  // localStorage-fallback branches are gone on purpose: with RLS on, an
+  // unauthorised read returns [] rather than an error, and the old code read
+  // that as "database is empty, push the seeds" — which would overwrite the
+  // real strain table with the hardcoded sample data.
   useEffect(() => {
     const loadData = async () => {
-      try {
-        const [{ data: dbStrains, error: sErr }, { data: dbExtracts, error: eErr }] = await Promise.all([
-          supabase.from('strains').select('*').order('name'),
-          supabase.from('extracts').select('*').order('name'),
-        ]);
-        if (sErr) throw sErr;
-        if (eErr) throw eErr;
-
-        if ((dbStrains && dbStrains.length > 0) || (dbExtracts && dbExtracts.length > 0)) {
-          // Supabase has data — use it
-          if (dbStrains?.length) setStrains(dbStrains.map(strainFromDb).map(migrateStrain));
-          if (dbExtracts?.length) setExtracts(dbExtracts.map(extractFromDb));
-        } else {
-          // Supabase is empty — migrate from localStorage or seed defaults
-          let migratedStrains = INITIAL_STRAINS;
-          let migratedExtracts = INITIAL_EXTRACTS;
-          const savedStrains = localStorage.getItem('purlife-strains-v2');
-          const savedExtracts = localStorage.getItem('purlife-extracts-v2');
-          if (savedStrains) try { migratedStrains = JSON.parse(savedStrains).map(migrateStrain); } catch {}
-          if (savedExtracts) try { migratedExtracts = JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false })); } catch {}
-
-          // Push to Supabase
-          const { error: pushS } = await supabase.from('strains').upsert(migratedStrains.map(strainToDb));
-          const { error: pushE } = await supabase.from('extracts').upsert(migratedExtracts.map(extractToDb));
-          if (pushS) console.error('Strain migration error:', pushS);
-          if (pushE) console.error('Extract migration error:', pushE);
-
-          setStrains(migratedStrains);
-          setExtracts(migratedExtracts);
-          console.log('✅ Migrated localStorage data to Supabase');
-        }
-      } catch (err) {
-        console.error('Supabase load failed, falling back to localStorage:', err);
-        const savedStrains = localStorage.getItem('purlife-strains-v2');
-        const savedExtracts = localStorage.getItem('purlife-extracts-v2');
-        if (savedStrains) try { setStrains(JSON.parse(savedStrains).map(migrateStrain)); } catch {}
-        if (savedExtracts) try { setExtracts(JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false }))); } catch {}
+      const [{ data: dbStrains, error: sErr }, { data: dbExtracts, error: eErr }] = await Promise.all([
+        supabase.from('strains').select('*').order('name'),
+        supabase.from('extracts').select('*').order('name'),
+      ]);
+      if (sErr || eErr) {
+        console.error('Supabase load failed:', sErr || eErr);
+        setLoadError('Could not load the menu. Check your connection and reload.');
+      } else {
+        setStrains((dbStrains ?? []).map(strainFromDb).map(migrateStrain));
+        setExtracts((dbExtracts ?? []).map(extractFromDb));
       }
       setLoaded(true);
     };
@@ -607,18 +562,22 @@ export default function MenuApp() {
       <div style={{ background: '#12122a', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#fff', letterSpacing: '0.5px' }}>PURLIFE — HOBBS</div>
-          <div style={{ fontSize: '11px', color: C.muted }}>Menu Manager v2</div>
+          <div style={{ fontSize: '11px', color: C.muted }}>
+            Menu Manager v2 · {user?.email} · {isMenuEditor ? 'editor' : 'view + stock only'}
+          </div>
         </div>
-        
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            onClick={importBackup} 
-            style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-          >
-            📂 Import JSON
-          </button>
-          <button 
-            onClick={exportBackup} 
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {isMenuEditor && (
+            <button
+              onClick={importBackup}
+              style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+            >
+              📂 Import JSON
+            </button>
+          )}
+          <button
+            onClick={exportBackup}
             style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
           >
             💾 Backup JSON
@@ -629,8 +588,20 @@ export default function MenuApp() {
           >
             ❓ Help
           </button>
+          <button
+            onClick={signOut}
+            style={{ background: C.panel, color: C.muted, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          >
+            Sign out
+          </button>
         </div>
       </div>
+
+      {loadError && (
+        <div style={{ background: '#3a1f1f', color: '#e79090', padding: '10px 18px', fontSize: 13 }}>
+          {loadError}
+        </div>
+      )}
       {/* 3. Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, background: '#12122a', overflowX: 'auto' }}>
         {[['edit-flower', 'Edit Flower'], ['edit-extracts', 'Edit Extracts'], ['eighths', 'Print Eighths'], ['halves', 'Print Halves'], ['extracts', 'Print Extracts']].map(([id, lbl]) => (
