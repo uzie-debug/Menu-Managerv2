@@ -484,6 +484,17 @@ function MenuApp() {
   URL.revokeObjectURL(url);
 };
 
+  // One shared column definition for the header row and every strain row, so
+  // they cannot drift apart. Fixed px for everything except the name, which
+  // absorbs the slack.
+  const rowGrid = {
+    display: 'grid',
+    gridTemplateColumns:
+      `26px 20px minmax(140px, 1fr) 110px 66px ${weightOptions.map(() => '76px').join(' ')} 68px`,
+    gap: '10px',
+    alignItems: 'center',
+  };
+
   // Print pages come from weight_options.print_page, so the tab list and the
   // page contents stay in sync with the table without a code change.
   const printPages = [...new Map(
@@ -749,19 +760,29 @@ function MenuApp() {
                     </span>
                   </button>
 
+                  {/* One real column per weight, sized in px. Every row is its
+                      own grid, so any `auto`/`fr` track here would size to its
+                      own content and the columns would jitter row to row as
+                      soon as strains stop offering identical weights. */}
+                  {isOpen && (
+                    <div style={{ ...rowGrid, padding: '6px 12px', minHeight: 0, fontSize: 10, color: C.muted, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '.5px', borderBottom: `1px solid ${C.border}` }}>
+                      <div /><div />
+                      <div>Strain</div>
+                      <div>Brand</div>
+                      <div style={{ textAlign: 'center' }}>THC</div>
+                      {weightOptions.map(w => (
+                        <div key={w.weight} style={{ textAlign: 'center' }}>{w.label}</div>
+                      ))}
+                      <div />
+                    </div>
+                  )}
+
                   {isOpen && bandStrains.map((s, i) => {
-                    const offered = weightOptions.filter(w => s.weights[w.weight] !== undefined);
                     const out = s.inStock === false;
                     return (
                       <div key={s.id} style={{
-                        // Every flexible track gets an explicit floor via
-                        // minmax(). A bare `1fr` can't shrink below its
-                        // content's min-content width, which is what made the
-                        // price cells spill into the column next door.
-                        display: 'grid',
-                        gridTemplateColumns: '28px 22px minmax(120px, 1.6fr) 90px 78px minmax(190px, 1.5fr) 72px',
-                        gap: '10px',
-                        padding: '10px 12px', alignItems: 'center', minHeight: TAP,
+                        ...rowGrid,
+                        padding: '8px 12px', minHeight: TAP,
                         background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
                         opacity: out ? 0.45 : 1,
                         borderBottom: `1px solid ${C.border}44`,
@@ -770,7 +791,7 @@ function MenuApp() {
                         <button
                           onClick={() => toggleStock(s.id, false)}
                           title={out ? 'Mark in stock' : 'Mark out of stock'}
-                          style={{ width: 28, height: 28, borderRadius: '50%', border: `2px solid ${out ? '#4a4a6a' : C.good}`, background: out ? 'transparent' : C.good, cursor: 'pointer', padding: 0 }}
+                          style={{ width: 26, height: 26, borderRadius: '50%', border: `2px solid ${out ? '#4a4a6a' : C.good}`, background: out ? 'transparent' : C.good, cursor: 'pointer', padding: 0 }}
                         />
 
                         <div style={{ color: TU[s.type], fontWeight: 'bold', fontSize: '15px', textAlign: 'center' }}>{s.type}</div>
@@ -783,47 +804,49 @@ function MenuApp() {
                           {brands.find(b => b.id === s.brandId)?.label ?? <span style={{ color: '#a06060' }}>no brand</span>}
                         </div>
 
-                        {isMenuEditor
-                          ? <InlineCell
-                              value={s.thc} suffix="%" width={48}
-                              onCommit={v => saveStrainField(s.id, 'thc', v)}
-                            />
-                          : <div style={{ fontSize: '12px', textAlign: 'center', color: s.thc === '' ? C.muted : C.text }}>
-                              {s.thc === '' ? '—' : `${s.thc}%`}
-                            </div>}
-
-                        {/* Which weights a strain is offered in comes from the
-                            modal; the price for each is editable in place so
-                            bulk entry doesn't mean 38 modal round trips. */}
-                        <div style={{ minWidth: 0, display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                          {offered.length === 0
-                            ? <span style={{ fontSize: 11, color: '#a06060' }}>no weights set</span>
-                            : offered.map(w => (
-                                <span key={w.weight} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, background: '#14142a', border: `1px solid ${C.border}`, borderRadius: 3, padding: '2px 6px', whiteSpace: 'nowrap' }}>
-                                  {w.label}
-                                  {isMenuEditor
-                                    ? <InlineCell
-                                        value={s.weights[w.weight]} prefix="$" width={52}
-                                        onCommit={v => saveWeightPrice(s.id, w.weight, v)}
-                                      />
-                                    : <strong style={{ color: '#fff' }}>{money(s.weights[w.weight]) || '—'}</strong>}
-                                </span>
-                              ))}
+                        <div style={{ textAlign: 'center' }}>
+                          {isMenuEditor
+                            ? <InlineCell value={s.thc} suffix="%" width={44}
+                                onCommit={v => saveStrainField(s.id, 'thc', v)} />
+                            : <span style={{ fontSize: 12, color: s.thc === '' ? C.muted : C.text }}>
+                                {s.thc === '' ? '—' : `${s.thc}%`}
+                              </span>}
                         </div>
+
+                        {/* A weight the strain isn't offered in reads as a dash.
+                            Ticking it on is the modal's job; the price for one
+                            already offered is editable right here so bulk entry
+                            doesn't mean 38 modal round trips. */}
+                        {weightOptions.map(w => {
+                          const offered = s.weights[w.weight] !== undefined;
+                          return (
+                            <div key={w.weight} style={{ textAlign: 'center' }}>
+                              {!offered
+                                ? <span style={{ color: C.muted, opacity: .4 }}>—</span>
+                                : isMenuEditor
+                                  ? <InlineCell value={s.weights[w.weight]} prefix="$" width={50}
+                                      onCommit={v => saveWeightPrice(s.id, w.weight, v)} />
+                                  : <strong style={{ fontSize: 12, color: '#fff' }}>
+                                      {money(s.weights[w.weight]) || '—'}
+                                    </strong>}
+                            </div>
+                          );
+                        })}
 
                         <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
                           {isMenuEditor && (
                             <>
                               <button onClick={() => openEdit(s, false)} title="Edit details and prices"
-                                style={{ background: '#35355a', color: C.text, border: 'none', padding: '8px 10px', minHeight: 36, borderRadius: '3px', cursor: 'pointer', fontSize: '12px' }}>✎</button>
+                                style={{ background: '#35355a', color: C.text, border: 'none', padding: '7px 9px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px' }}>✎</button>
                               <button onClick={() => deleteItem(s.id, false)} title="Delete strain"
-                                style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '8px 10px', minHeight: 36, borderRadius: '3px', cursor: 'pointer', fontSize: '12px' }}>×</button>
+                                style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '7px 9px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px' }}>×</button>
                             </>
                           )}
                         </div>
                       </div>
                     );
                   })}
+
                 </div>
               );
             })}
