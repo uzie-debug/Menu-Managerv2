@@ -6,7 +6,10 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 export const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ── DB ↔ JS field mapping ──────────────────────────────────
-// Supabase uses snake_case, React state uses camelCase
+// Supabase uses snake_case, React state uses camelCase.
+
+// The embedded select that strainFromDb expects.
+export const STRAIN_SELECT = '*, strain_weights(weight, price)';
 
 export const strainFromDb = (row) => ({
   id: row.id,
@@ -14,19 +17,35 @@ export const strainFromDb = (row) => ({
   name: row.name,
   lineage: row.lineage || '',
   terpenes: row.terpenes || '',
-  inStock: row.in_stock,
-  tiers: row.tiers,
+  brandId: row.brand_id || '',
+  // numeric columns come back as numbers or null; the inputs want strings
+  thc: row.thc == null ? '' : String(row.thc),
+  cbd: row.cbd == null ? '' : String(row.cbd),
+  inStock: row.in_stock !== false,
+  archived: !!row.archived,
+  // { '3.5g': 20, '7g': 30 } — price lives per weight, never on the strain
+  weights: Object.fromEntries(
+    (row.strain_weights ?? []).map(w => [w.weight, w.price == null ? '' : String(w.price)])
+  ),
   createdAt: row.created_at,
 });
 
+// Numeric columns reject '' — send null instead.
+const num = (v) => (v === '' || v == null ? null : Number(v));
+
+// Deliberately does not include weights/prices. Those are rows in
+// strain_weights and are written by saveWeights, not by a strains upsert.
 export const strainToDb = (s) => ({
   id: s.id,
   type: s.type,
   name: s.name,
   lineage: s.lineage || '',
   terpenes: s.terpenes || '',
+  brand_id: s.brandId || null,
+  thc: num(s.thc),
+  cbd: num(s.cbd),
   in_stock: s.inStock !== false,
-  tiers: s.tiers,
+  archived: !!s.archived,
 });
 
 export const extractFromDb = (row) => ({

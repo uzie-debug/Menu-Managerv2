@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
-import { supabase, strainFromDb, strainToDb, extractFromDb, extractToDb } from './supabaseClient';
+import { supabase, STRAIN_SELECT, strainFromDb, strainToDb, extractFromDb, extractToDb } from './supabaseClient';
+import { useAuth } from './AuthContext';
+import { describeDbError } from './dbError';
+import Login from './Login';
+import { C, TAP } from './theme';
 
 
 // ── Type colors ──────────────────────────────────────────────
@@ -7,184 +11,117 @@ const TC = { I: '#6B5B95', H: '#4A7A4A', S: '#B5651D' }; // print
 const TU = { I: '#A99ED4', H: '#82C082', S: '#D9934A' }; // UI
 const TO = { I: 0, H: 1, S: 2 };
 
-// ── Tier config ──────────────────────────────────────────────
-const TIER_CFG = {
-  reserve: { label: 'Reserve', eighthsHeader: 'PURLIFE RESERVE · 4g SUPER EIGHTHS', eighthsPrice: '1 for $20 · 4 for $70 · 8 for $130', halvesHeader: 'PURLIFE RESERVE · ½ oz', halvesPrice: '$40 each · 2 for $75' },
-  premium: { label: 'Premium', eighthsHeader: 'PURLIFE PREMIUM · 4g SUPER EIGHTHS', eighthsPrice: '1 for $20 · 4 for $70 · 8 for $130', halvesHeader: 'PURLIFE PREMIUM · ½ oz', halvesPrice: '$40 each · 2 for $75' },
-  caliente: { label: 'Caliente', eighthsHeader: 'CALIENTE BRAND · 3.5g', eighthsPrice: '$9 each', halvesHeader: 'CALIENTE BRAND · ½ oz', halvesPrice: '$30 each · 2 for $55' },
-  orale: { label: 'Orale', eighthsHeader: 'ORALE BRAND · 3.5g', eighthsPrice: 'PRICED AS MARKED', halvesHeader: 'ORALE BRAND · ½ oz', halvesPrice: 'PRICED AS MARKED' }, // TODO: fill in real pricing
-  thirdParty: { label: 'Third Party', eighthsHeader: 'THIRD PARTY BRANDS · 3.5g', eighthsPrice: 'PRICED AS MARKED', halvesHeader: null, halvesPrice: null },
-};
-const TIER_ORDER = ['reserve', 'premium', 'caliente', 'orale', 'thirdParty'];
+// ── Alphabet bands ───────────────────────────────────────────
+// Strains group into four bands instead of the old tiers. Bands are a UI
+// affordance only; nothing in the database knows about them.
+const BANDS = [
+  { id: 'A-H', label: 'A–H', test: c => c >= 'A' && c <= 'H' },
+  { id: 'I-N', label: 'I–N', test: c => c >= 'I' && c <= 'N' },
+  { id: 'O-U', label: 'O–U', test: c => c >= 'O' && c <= 'U' },
+  { id: 'V-Z', label: 'V–Z', test: c => c >= 'V' && c <= 'Z' },
+  // Names starting with a digit or symbol have to land somewhere.
+  { id: '#',   label: '#',   test: () => true },
+];
 
-// Add this new color map right here!
-const TIER_COLORS = {
-  reserve: '#D4AF37',   // Gold
-  premium: '#3b9b9b',   // Teal
-  caliente: '#d9534f',  // Red
-  orale: '#e08a3c',     // Warm Orange
-  thirdParty: '#6a6a8c' // Muted Purple/Grey
+const bandOf = (name) => {
+  const c = (name || '').trim().charAt(0).toUpperCase();
+  return BANDS.find(b => b.test(c)).id;
 };
 
 const mkId = () => Math.random().toString(36).slice(2, 9);
 
-// ── Data Migration Tool ──────────────────────────────────────
-const EMPTY_TIER = { active: false, eighths: false, quarters: false, halves: false, price: '', thc: '' };
-const EMPTY_TIERS = () => ({
-  reserve: { ...EMPTY_TIER }, premium: { ...EMPTY_TIER }, caliente: { ...EMPTY_TIER },
-  orale: { ...EMPTY_TIER }, thirdParty: { ...EMPTY_TIER }
-});
+const money = (v) => (v === '' || v == null ? '' : `$${Number(v).toFixed(2).replace(/\.00$/, '')}`);
 
-const migrateStrain = (s) => {
-  const { flags, blanks, ...cleanS } = s; // Strips out deprecated flag data
-  
-  // Already in new format — just ensure orale + quarters exist on each tier
-  if (cleanS.tiers && cleanS.tiers.reserve && cleanS.tiers.reserve.thc !== undefined) {
-    const patched = { ...EMPTY_TIERS() };
-    for (const key of Object.keys(patched)) {
-      if (cleanS.tiers[key]) {
-        patched[key] = { ...patched[key], ...cleanS.tiers[key], quarters: cleanS.tiers[key].quarters ?? false };
-      }
-    }
-    return { ...cleanS, tiers: patched, inStock: cleanS.inStock !== false }; 
-  }
-  
-  // Old single-tier format → convert
-  const t = EMPTY_TIERS();
-  
-  if (cleanS.tier && t[cleanS.tier]) {
-    t[cleanS.tier] = { active: true, eighths: !!cleanS.hasEighths, quarters: false, halves: !!cleanS.hasHalves, price: cleanS.price || '', thc: cleanS.thc || '' };
-  } else if (cleanS.tiers) {
-    for (const key of Object.keys(t)) {
-      if (cleanS.tiers[key]) {
-        t[key] = { ...t[key], ...cleanS.tiers[key], quarters: cleanS.tiers[key].quarters ?? false, thc: cleanS.tiers[key].thc || cleanS.thc || '' };
-      }
-    }
-  }
-  
-  const { tier, hasEighths, hasHalves, price, thc, ...rest } = cleanS; 
-  return { ...rest, tiers: t, inStock: cleanS.inStock !== false };
-};
+// Print output is built as an HTML string, so anything from the database has
+// to be escaped on the way in. Strain names contain apostrophes and ×.
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
 
-// ── Initial Data ─────────────────────────────────────────────
-const RAW_INITIAL_STRAINS = [
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'White Widow XXL', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Northern Lights', thc: '', lineage: 'Afghani × Thai Landrace', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'L.A. Banana Cake', thc: '', lineage: 'L.A. Kush Cake × Banana Punch', terpenes: 'Limonene · B-Caryophyllene · B-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Chicken n’ Wafflez', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Chocolate Waffles', thc: '', lineage: 'L.A. Amnesia × Thin Mints', terpenes: 'B-Caryophyllene · Terpinolene · Ocimene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Dark Phoenix', thc: '', lineage: 'Trainwreck × Jack Herrer', terpenes: 'Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Superboof', thc: '', lineage: 'Black Cherry Punch × Tropicana Cookies', terpenes: 'D-Limonene · B-Caryophyllene · Nerolidol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Alien OG', thc: '', lineage: 'Tahoe OG × Alien Kush', terpenes: 'Limonene · B-Caryophyllene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Mystery Mix', thc: '', lineage: 'Mystery Machine × Cake Mix', terpenes: 'B-Caryophyllene · Limonene · Nerolidol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Purple Octane x Jealousy', thc: '', lineage: 'Biscotti × Sherb Bx1 × Jealousy F2', terpenes: 'D-Limonene · B-Caryophyllene · Linalool · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Grand Master Kush', thc: '', lineage: 'Kush × Bubba Kush', terpenes: 'Myrcene · Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Coconut Milk', thc: '', lineage: 'Tropical Smoothie × Cereal Milk', terpenes: 'Myrcene · Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Hardcore OG', thc: '', lineage: 'Hardcore OG × Big Bud × DJ Short Blueberry', terpenes: 'D-Limonene · Linalool · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Irish Cannonball x Blue Dream', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Zack’s Cake', thc: '', lineage: 'Zack’s Pie × Jungle Cake', terpenes: 'B-Caryophyllene · D-Limonene · A-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Zkittles x Afghani', thc: '', lineage: 'Zkittles × Afghani', terpenes: 'Limonene · Myrcene · Linalool', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Don Mega', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Brain Freeze', thc: '', lineage: 'Legends Ultimate Indica × Cinderella 99', terpenes: 'Limonene · B-Caryophyllene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Whiplash', thc: '', lineage: 'M8 × Lebanon 3', terpenes: 'Myrcene · B-Caryophyllene · Guaiol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Seriotica', thc: '', lineage: 'Serious Mimosa × Cookies', terpenes: 'Limonene · A-Pinene · B-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Hypothermia', thc: '', lineage: 'Blunicorn × Slurricane 23', terpenes: 'Ocimene · A-Pinene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Hi-Fi 4G', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Hawaiian Dream', thc: '', lineage: 'Blue Dream × Mauie Wowie', terpenes: 'Terpinolene · B-Pinene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Gorilla Cream', thc: '', lineage: 'GG4 × Cookies And Cream × Big Bud', terpenes: 'Myrcene · B-Caryophyllene · Limonene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Divine Frost', thc: '', lineage: 'Divine Gelato × Permafrost', terpenes: 'B-Caryophyllene · Limonene · A-Humulene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Cap Junky', thc: '', lineage: 'Alien Cookies × Kush Mints', terpenes: 'D-Limonene · B-Caryophyllene · Linalool', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Banana Kush', thc: '', lineage: 'Ghost OG × Skunk × Haze', terpenes: 'A-Pinene · Linalool · Guaiol', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Lemon Suit Larry', thc: '', lineage: 'Lemon Larry × Commerce City Kush', terpenes: 'Myrcene · Terpinolene · Ocimene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Tropical Cake', thc: '', lineage: 'Tropicana Cookie × Wedding Cake', terpenes: 'B-Caryophyllene · Limonene · Myrcene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Açai Cookies', thc: '', lineage: 'Açaí Mints × Banana Punch', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Candied Taters', thc: '', lineage: 'Potato Kush × Candied Lemons', terpenes: 'Camphene · Terpinolene · A-Terpinolene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Champaya', thc: '', lineage: 'Papaya × Mimosa V6', terpenes: 'Limonene · A-Pinene · B-Pinene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Chapel of Love', thc: '', lineage: 'F1 Durban × Kush Mints × Gushers', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Cherry Animal Punch', thc: '', lineage: 'Animal Cookies × Cherry AK47 × Purple Punch', terpenes: 'B-Caryophyllene · Limonene · Humulene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'I', name: 'Countree Grammar', thc: '', lineage: 'Açaí Mints × Banana Punch', terpenes: 'Myrcene · D-Limonene · B-Caryophyllene', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'H', name: 'Critical Glue', thc: '', lineage: '', terpenes: '', hasEighths: true, hasHalves: true },
-  { id: mkId(), tier: 'reserve', type: 'S', name: 'Franco’s Lemon Cheese', thc: '', lineage: 'Lemon Haze × Exodus Cheese', terpenes: 'B-Caryophyllene · Myrcene · Limonene', hasEighths: true, hasHalves: true }
-];
-
-const INITIAL_STRAINS = RAW_INITIAL_STRAINS.map(migrateStrain);
-
-const INITIAL_EXTRACTS = [
-  { id: mkId(), category: 'vape', type: 'H', brand: 'Purlife', name: 'Blue Dream', extract: 'Distillate', texture: '', size: '1g', price: '$35', hasBattery: true, inStock: true },
-  { id: mkId(), category: 'vape', type: 'S', brand: 'Cookies', name: 'Gary Payton', extract: 'Live Resin', texture: '', size: '0.5g', price: '$45', hasBattery: false, inStock: true },
-  { id: mkId(), category: 'concentrate', type: 'I', brand: 'DabCo', name: 'OG Kush', extract: 'Cured Resin', texture: 'Badder', size: '1g', price: '$30', hasBattery: false, inStock: true }
-];
 
 // ── Helpers ──────────────────────────────────────────────────
 const sortItems = arr => [...arr].sort((a, b) => (TO[a.type] ?? 9) - (TO[b.type] ?? 9));
 
 // ── Print HTML Builders ──────────────────────────────────────
-function buildFlowerHtml(strains, menuType) {
-  const sections = TIER_ORDER.map(tier => {
-    const cfg = TIER_CFG[tier];
-    if (menuType === 'halves' && !cfg.halvesHeader) return null;
-    const relevant = strains.filter(s => s.inStock !== false && s.tiers?.[tier]?.active && (menuType === 'eighths' ? s.tiers[tier].eighths : s.tiers[tier].halves));
-    const ts = sortItems(relevant);
-    return ts.length ? { tier, cfg, strains: ts } : null;
-  }).filter(Boolean);
+// Takes rows straight out of v_print_menu (one row per strain per weight)
+// for a single print_page, and renders a section per brand, then a table per
+// subheader inside it.
+//
+// The page layout is data, not code: brand order comes from brands.sort_order,
+// and grouping comes from print_page / print_subhead / weight_sort in
+// weight_options. Moving quarters onto their own page, or reordering the
+// brands, is a row edit rather than a change here.
+function buildFlowerHtml(rows, pageId, pageTitle, brandOrder) {
+  // A row with a weight but no price would print a blank price cell on a
+  // customer-facing menu. Drop it here; doPrint warns about them first.
+  const pageRows = rows.filter(r =>
+    r.print_page === pageId && r.in_stock !== false && r.price != null);
 
-  const isEighths = menuType === 'eighths';
-  const title = isEighths ? 'FLOWER — SUPER EIGHTHS (4g) & THIRD PARTY (3.5g)' : 'FLOWER — HALF OUNCES (½ oz)';
+  // Brands that actually have something on this page, in sort_order.
+  const sections = brandOrder
+    .filter(b => pageRows.some(r => r.brand_id === b.id))
+    .map(b => ({ label: b.label, rows: pageRows.filter(r => r.brand_id === b.id) }));
+
+  // A strain with no brand still has to print rather than vanish silently.
+  const unbranded = pageRows.filter(r => !r.brand_id);
+  if (unbranded.length) sections.push({ label: 'Other', rows: unbranded });
+
+  const renderTable = (items, subLabel) => {
+    const sorted = items.slice().sort((a, b) =>
+      (a.weight_sort - b.weight_sort) ||
+      (TO[a.type] ?? 9) - (TO[b.type] ?? 9) ||
+      a.name.localeCompare(b.name)
+    );
+    const rowsHtml = sorted.map((r, i) => {
+      const bg = i % 2 === 0 ? '' : 'style="background:#ebebeb"';
+      const nameCell = `<strong>${esc(r.name)}</strong>${r.lineage ? `<br><span class="lin">${esc(r.lineage)}</span>` : ''}`;
+      const thcStr = r.thc == null ? '' : `${r.thc}%`;
+      return `<tr ${bg}><td class="tc" style="color:${TC[r.type]}">${esc(r.type)}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr"><strong>${money(r.price)}</strong></td><td class="terp">${esc(r.terpenes || '')}</td></tr>`;
+    }).join('');
+    const sub = subLabel
+      ? `<tr><td class="sub-hdr" colspan="5">${esc(subLabel.toUpperCase())}</td></tr>`
+      : '';
+    return `<table><thead>${sub}<tr class="chdr"><th>TYPE</th><th>STRAIN · LINEAGE</th><th>THC</th><th>PRICE</th><th>COMMONLY DOMINANT TERPENES</th></tr></thead><tbody>${rowsHtml}</tbody></table>`;
+  };
 
   const tables = sections.map(sec => {
-    const isThirdParty = sec.tier === 'thirdParty';
-    const cols = (isEighths && !isThirdParty) ? 4 : 5;
-    const hdr = isEighths ? sec.cfg.eighthsHeader : sec.cfg.halvesHeader;
-    const priceHdr = isEighths ? sec.cfg.eighthsPrice : sec.cfg.halvesPrice;
-
-    const colHdr = (isEighths && !isThirdParty)
-      ? '<tr class="chdr"><th>TYPE</th><th>STRAIN · LINEAGE</th><th>THC</th><th>COMMONLY DOMINANT TERPENES</th></tr>'
-      : '<tr class="chdr"><th>TYPE</th><th>STRAIN · LINEAGE</th><th>THC</th><th>PRICE</th><th>COMMONLY DOMINANT TERPENES</th></tr>';
-
-    const rowsHtml = sec.strains.map((s, i) => {
-      const linVal = s.lineage || '';
-      const terpVal = s.terpenes || '';
-      const bg = i % 2 === 0 ? '' : 'style="background:#ebebeb"';
-      const nameCell = `<strong>${s.name}</strong>${linVal ? `<br><span class="lin">${linVal}</span>` : ''}`;
-      
-      const tierData = s.tiers[sec.tier];
-      const thcStr = tierData.thc ? `${tierData.thc}%` : '';
-      
-      if (isEighths && !isThirdParty) {
-        return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="terp">${terpVal}</td></tr>`;
-      } else if (isEighths && isThirdParty) {
-        return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr"><strong>${tierData.price || ''}</strong></td><td class="terp">${terpVal}</td></tr>`;
-      } else {
-        // Check if this is the Caliente tier to apply the correct halves pricing
-        const halvesPriceHtml = sec.tier === 'caliente' 
-          ? '<strong>$30</strong><br><span class="sub">2/$55</span>'
-          : '<strong>$40</strong><br><span class="sub">2/$75</span>';
-
-        return `<tr ${bg}><td class="tc" style="color:${TC[s.type]}">${s.type}</td><td>${nameCell}</td><td class="ctr">${thcStr}</td><td class="ctr">${halvesPriceHtml}</td><td class="terp">${terpVal}</td></tr>`;
-      }
-    }).join('');
-    return `<table><thead><tr><td class="th-name" colspan="${cols}">${hdr}</td></tr><tr><td class="th-price" colspan="${cols}">${priceHdr}</td></tr>${colHdr}</thead><tbody>${rowsHtml}</tbody></table>`;
+    // null subhead prints first, then the rest in weight_sort order.
+    const subheads = [];
+    for (const r of sec.rows.slice().sort((a, b) => a.weight_sort - b.weight_sort)) {
+      const key = r.print_subhead ?? null;
+      if (!subheads.some(s => s.key === key)) subheads.push({ key, label: r.print_subhead });
+    }
+    const inner = subheads
+      .map(s => renderTable(sec.rows.filter(r => (r.print_subhead ?? null) === s.key), s.label))
+      .join('');
+    return `<div class="brand-box"><div class="brand-title">${esc(sec.label.toUpperCase())}</div>${inner}</div>`;
   }).join('');
 
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PurLife – ${title}</title>
+  const body = tables || '<p style="text-align:center;color:#888;padding:40px 0">Nothing in stock for this page.</p>';
+
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>PurLife – ${esc(pageTitle)}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box} body{font-family:Helvetica,Arial,sans-serif;font-size:9pt;color:#1a1a1a;padding:.4in}
 .store{font-size:18pt;font-weight:bold;text-align:center;margin-bottom:3px} .ttl{font-size:12pt;font-weight:bold;text-align:center;color:#2e2e2e;margin-bottom:5px}
 hr{border:none;border-top:1px solid #2e2e2e;margin-bottom:4px} .leg{font-size:8pt;color:#555;text-align:center;margin-bottom:8px}
 table{width:100%;border-collapse:collapse;margin-bottom:10px}
-.th-name td{background:#2e2e2e;color:#fff;font-weight:bold;font-size:9pt;padding:5px 6px 2px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
-.th-price td{background:#2e2e2e;color:#fff;font-weight:bold;font-size:12pt;text-align:center;padding:2px 6px 6px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.brand-box{border:2px solid #2e2e2e;padding:10px;margin-bottom:14px;page-break-inside:avoid;border-radius:4px}
+.brand-title{background:#2e2e2e;color:#fff;font-size:12pt;font-weight:bold;text-align:center;padding:4px;margin:-10px -10px 10px -10px;print-color-adjust:exact;-webkit-print-color-adjust:exact}
+.brand-box table:last-child{margin-bottom:0}
+.sub-hdr{background:#666;color:#fff;font-weight:bold;font-size:9pt;padding:4px 6px;text-align:center;print-color-adjust:exact;-webkit-print-color-adjust:exact}
 .chdr th{background:#e8e8e8;font-size:7pt;color:#555;padding:3px 5px;text-align:left;border-bottom:1px solid #888;font-weight:bold;print-color-adjust:exact;-webkit-print-color-adjust:exact}
 tbody tr td{padding:3px 5px;border-bottom:1px solid #ccc;vertical-align:middle}
 .tc{font-weight:bold;font-size:9.5pt;text-align:center;width:5%} .ctr{text-align:center}
-.lin{font-size:7pt;color:#555;font-style:italic} .sub{font-size:7.5pt;color:#555} .terp{font-size:7.5pt;width:${isEighths ? '47%' : '46%'}}
+.lin{font-size:7pt;color:#555;font-style:italic} .terp{font-size:7.5pt;width:46%}
 .foot{font-size:6.5pt;color:#888;text-align:center;border-top:.5px solid #aaa;padding-top:4px;margin-top:8px}
 </style></head><body>
-<div class="store">PURLIFE — HOBBS</div><div class="ttl">${title}</div><hr>
+<div class="store">PURLIFE — HOBBS</div><div class="ttl">${esc(pageTitle)}</div><hr>
 <div class="leg"><span style="color:${TC.I};font-weight:bold">I</span> Indica &nbsp;&nbsp; <span style="color:${TC.H};font-weight:bold">H</span> Hybrid &nbsp;&nbsp; <span style="color:${TC.S};font-weight:bold">S</span> Sativa</div>
-${tables}
+${body}
 <div class="foot">Prices subject to change</div><script>window.onload=function(){window.print()}</script></body></html>`;
 }
+
 
 function buildExtractsHtml(extracts) {
   const active = extracts.filter(e => e.inStock !== false);
@@ -252,20 +189,85 @@ ${vapesHtml}${concHtml}
 <div class="foot">Prices subject to change</div><script>window.onload=function(){window.print()}</script></body></html>`;
 }
 
-// ── UI theme ─────────────────────────────────────────────────
-const C = { bg: '#18182a', panel: '#21213a', border: '#35355a', text: '#ccc8e8', muted: '#7a77a0', accent: '#7c6fcd', danger: '#c05050', good: '#5a9a5a' };
+// A number cell that edits in place. Keeps its own draft so typing stays
+// responsive, and only calls onCommit on blur or Enter — one write per field
+// rather than one per keystroke.
+function InlineCell({ value, onCommit, prefix = '', suffix = '', width = 56 }) {
+  const [draft, setDraft] = useState(value);
+  // Re-sync when the row changes underneath (a rolled-back write, a reload).
+  useEffect(() => { setDraft(value); }, [value]);
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
+      {prefix && <span style={{ color: C.muted, fontSize: 11 }}>{prefix}</span>}
+      <input
+        type="number" inputMode="decimal" step="0.01" min="0"
+        value={draft} placeholder="—"
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => onCommit(draft)}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+        style={{
+          // A fixed width plus border-box: number inputs carry a wide
+          // intrinsic size, and without this they refuse to shrink and push
+          // into the neighbouring grid column.
+          width, minWidth: 0, boxSizing: 'border-box',
+          background: 'transparent', border: `1px solid ${C.border}`,
+          borderRadius: 3, color: C.text, padding: '4px 6px',
+          fontSize: 13, textAlign: 'center',
+          // Spinners eat horizontal space and are useless on a touch screen.
+          appearance: 'textfield', MozAppearance: 'textfield',
+        }}
+      />
+      {suffix && <span style={{ color: C.muted, fontSize: 11 }}>{suffix}</span>}
+    </span>
+  );
+}
 
 // ── Main app ─────────────────────────────────────────────────
-export default function MenuApp() {
-  const [strains, setStrains] = useState(INITIAL_STRAINS);
-  const [extracts, setExtracts] = useState(INITIAL_EXTRACTS);
+export default function App() {
+  const { session, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: C.bg, color: C.muted,
+        fontFamily: 'system-ui,sans-serif',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+      }}>Loading…</div>
+    );
+  }
+
+  // Anon reads are gone — without a session every query returns zero rows, so
+  // there is nothing useful to render behind this gate.
+  if (!session) return <Login />;
+
+  return <MenuApp />;
+}
+
+function MenuApp() {
+  const { user, isMenuEditor, signOut } = useAuth();
+  const [strains, setStrains] = useState([]);
+  const [extracts, setExtracts] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [tab, setTab] = useState('edit-flower');
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
-  
-  // PASTE IT HERE!
   const [showHelp, setShowHelp] = useState(false);
+
+  // Lookup tables. These drive the brand picker and the weight checkboxes, so
+  // adding a weight or a brand is a row edit rather than a code change.
+  const [brands, setBrands] = useState([]);
+  const [weightOptions, setWeightOptions] = useState([]);
+
+  // Collapsible alphabet bands. Everything starts open.
+  const [collapsed, setCollapsed] = useState({});
+  const toggleBand = (id) => setCollapsed(p => ({ ...p, [id]: !p[id] }));
+
+  // Last write failure, shown as a banner. The database is the real gate, so
+  // a viewer who gets past the UI still lands here with a 42501.
+  const [saveError, setSaveError] = useState(null);
+  const reportWrite = (error) => setSaveError(describeDbError(error));
 
   const importBackup = () => {
     // Create an invisible file upload input
@@ -281,26 +283,41 @@ export default function MenuApp() {
       const reader = new FileReader();
       reader.onload = async (event) => {
         try {
+          // This wipes and replaces both tables. Given there is no undo, make
+          // the operator say yes twice.
+          if (!window.confirm('This DELETES every strain and extract in the cloud and replaces them with the file. Continue?')) return;
           const data = JSON.parse(event.target.result);
-          const importedStrains = data.strains ? data.strains.map(migrateStrain) : [];
-          const importedExtracts = data.extracts ? data.extracts.map(s => ({ ...s, inStock: s.inStock !== false })) : [];
+          const importedStrains = data.strains ?? [];
+          const importedExtracts = (data.extracts ?? []).map(s => ({ ...s, inStock: s.inStock !== false }));
+
+          // Backups written before the schema change carry a `tiers` object
+          // and no `weights`. Those cannot be restored — refuse rather than
+          // silently importing strains with no prices.
+          if (importedStrains.some(s => s.tiers && !s.weights)) {
+            alert('This backup is from the old tier format and cannot be imported. Prices now live per weight.');
+            return;
+          }
 
           if (importedStrains.length) {
-            setStrains(importedStrains);
-            // Clear and re-push to Supabase
             await supabase.from('strains').delete().neq('id', '');
             const { error } = await supabase.from('strains').upsert(importedStrains.map(strainToDb));
-            if (error) console.error('Import strains to Supabase failed:', error);
+            if (error) throw error;
+            for (const s of importedStrains) {
+              const wErr = await saveWeights(s.id, s.weights ?? {});
+              if (wErr) throw wErr;
+            }
+            setStrains(importedStrains);
           }
           if (importedExtracts.length) {
-            setExtracts(importedExtracts);
             await supabase.from('extracts').delete().neq('id', '');
             const { error } = await supabase.from('extracts').upsert(importedExtracts.map(extractToDb));
-            if (error) console.error('Import extracts to Supabase failed:', error);
+            if (error) throw error;
+            setExtracts(importedExtracts);
           }
-          alert('Backup imported and synced to cloud!');
+          alert('Backup imported and synced to cloud.');
         } catch (err) {
-          alert('Error reading backup file. Make sure it is a valid JSON backup.');
+          console.error('Import failed:', err);
+          alert(describeDbError(err) ?? 'Error reading backup file. Make sure it is a valid JSON backup.');
         }
       };
       reader.readAsText(file);
@@ -310,46 +327,32 @@ export default function MenuApp() {
     input.click();
   };
 
-  // LOAD FROM SUPABASE (with one-time localStorage migration)
+  // LOAD FROM SUPABASE
+  //
+  // Supabase is the only source of truth now. The old seed-on-empty and
+  // localStorage-fallback branches are gone on purpose: with RLS on, an
+  // unauthorised read returns [] rather than an error, and the old code read
+  // that as "database is empty, push the seeds" — which would overwrite the
+  // real strain table with the hardcoded sample data.
   useEffect(() => {
     const loadData = async () => {
-      try {
-        const [{ data: dbStrains, error: sErr }, { data: dbExtracts, error: eErr }] = await Promise.all([
-          supabase.from('strains').select('*').order('name'),
-          supabase.from('extracts').select('*').order('name'),
-        ]);
-        if (sErr) throw sErr;
-        if (eErr) throw eErr;
-
-        if ((dbStrains && dbStrains.length > 0) || (dbExtracts && dbExtracts.length > 0)) {
-          // Supabase has data — use it
-          if (dbStrains?.length) setStrains(dbStrains.map(strainFromDb).map(migrateStrain));
-          if (dbExtracts?.length) setExtracts(dbExtracts.map(extractFromDb));
-        } else {
-          // Supabase is empty — migrate from localStorage or seed defaults
-          let migratedStrains = INITIAL_STRAINS;
-          let migratedExtracts = INITIAL_EXTRACTS;
-          const savedStrains = localStorage.getItem('purlife-strains-v2');
-          const savedExtracts = localStorage.getItem('purlife-extracts-v2');
-          if (savedStrains) try { migratedStrains = JSON.parse(savedStrains).map(migrateStrain); } catch {}
-          if (savedExtracts) try { migratedExtracts = JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false })); } catch {}
-
-          // Push to Supabase
-          const { error: pushS } = await supabase.from('strains').upsert(migratedStrains.map(strainToDb));
-          const { error: pushE } = await supabase.from('extracts').upsert(migratedExtracts.map(extractToDb));
-          if (pushS) console.error('Strain migration error:', pushS);
-          if (pushE) console.error('Extract migration error:', pushE);
-
-          setStrains(migratedStrains);
-          setExtracts(migratedExtracts);
-          console.log('✅ Migrated localStorage data to Supabase');
-        }
-      } catch (err) {
-        console.error('Supabase load failed, falling back to localStorage:', err);
-        const savedStrains = localStorage.getItem('purlife-strains-v2');
-        const savedExtracts = localStorage.getItem('purlife-extracts-v2');
-        if (savedStrains) try { setStrains(JSON.parse(savedStrains).map(migrateStrain)); } catch {}
-        if (savedExtracts) try { setExtracts(JSON.parse(savedExtracts).map(s => ({ ...s, inStock: s.inStock !== false }))); } catch {}
+      const [s, e, b, w] = await Promise.all([
+        // Embedded select — one round trip gets each strain with its weights
+        // and their prices.
+        supabase.from('strains').select(STRAIN_SELECT).eq('archived', false).order('name'),
+        supabase.from('extracts').select('*').order('name'),
+        supabase.from('brands').select('*').order('sort_order'),
+        supabase.from('weight_options').select('*').order('sort_order'),
+      ]);
+      const err = s.error || e.error || b.error || w.error;
+      if (err) {
+        console.error('Supabase load failed:', err);
+        setLoadError('Could not load the menu. Check your connection and reload.');
+      } else {
+        setStrains((s.data ?? []).map(strainFromDb));
+        setExtracts((e.data ?? []).map(extractFromDb));
+        setBrands(b.data ?? []);
+        setWeightOptions(w.data ?? []);
       }
       setLoaded(true);
     };
@@ -367,71 +370,111 @@ export default function MenuApp() {
     }
   };
 
-  const toggleStock = (id, isExtract) => {
-    let newVal;
-    if (isExtract) {
-      setExtracts(p => p.map(s => {
-        if (s.id === id) { newVal = s.inStock === false; return { ...s, inStock: newVal }; }
-        return s;
-      }));
-    } else {
-      setStrains(p => p.map(s => {
-        if (s.id === id) { newVal = s.inStock === false; return { ...s, inStock: newVal }; }
-        return s;
-      }));
+  // Stock is the one field every login may change, so it is optimistic:
+  // flip locally, then persist, then roll back if the database says no.
+  const toggleStock = async (id, isExtract) => {
+    const list = isExtract ? extracts : strains;
+    const setList = isExtract ? setExtracts : setStrains;
+    const current = list.find(s => s.id === id);
+    if (!current) return;
+    const next = current.inStock === false;
+
+    setList(p => p.map(s => s.id === id ? { ...s, inStock: next } : s));
+    const { error } = await supabase
+      .from(isExtract ? 'extracts' : 'strains')
+      .update({ in_stock: next })
+      .eq('id', id);
+    if (error) {
+      setList(p => p.map(s => s.id === id ? { ...s, inStock: !next } : s));
+      reportWrite(error);
     }
-    const table = isExtract ? 'extracts' : 'strains';
-    // newVal is captured by the setter above; use a fresh lookup
-    const current = isExtract ? extracts.find(s => s.id === id) : strains.find(s => s.id === id);
-    const toggled = current ? current.inStock === false : true;
-    supabase.from(table).update({ in_stock: toggled }).eq('id', id).then(({ error }) => {
-      if (error) console.error(`Toggle stock in ${table} failed:`, error);
-    });
   };
 
   const openEdit = (s, isExtract) => { setEditing({ ...s, isExtract }); setForm({ ...s }); };
-  
-  const openNewFlower = () => { 
-    setEditing({ isNew: true, isExtract: false }); 
-    setForm({ 
-      id: mkId(), type: 'H', name: '', lineage: '', terpenes: '', inStock: true,
-      tiers: {
-        reserve: { active: true, eighths: true, quarters: false, halves: true, price: '', thc: '' },
-        premium: { active: false, eighths: true, quarters: false, halves: true, price: '', thc: '' },
-        caliente: { active: false, eighths: true, quarters: false, halves: true, price: '', thc: '' },
-        orale: { active: false, eighths: true, quarters: false, halves: true, price: '', thc: '' },
-        thirdParty: { active: false, eighths: true, quarters: false, halves: false, price: '', thc: '' }
-      }
-    }); 
+
+  // ── Inline, per-row saves ─────────────────────────────────
+  // Bulk data entry goes through these, not the modal: tab across the row,
+  // type, move on. Writes fire on blur rather than on every keystroke.
+  const saveStrainField = async (id, field, value) => {
+    const before = strains.find(s => s.id === id);
+    if (!before || before[field] === value) return;
+    setStrains(p => p.map(s => s.id === id ? { ...s, [field]: value } : s));
+    const { error } = await supabase
+      .from('strains')
+      .update(strainToDb({ ...before, [field]: value }))
+      .eq('id', id);
+    if (error) {
+      setStrains(p => p.map(s => s.id === id ? before : s));
+      reportWrite(error);
+    }
   };
-  
+
+  const saveWeightPrice = async (id, weight, value) => {
+    const before = strains.find(s => s.id === id);
+    if (!before || before.weights[weight] === value) return;
+    setStrains(p => p.map(s => s.id === id
+      ? { ...s, weights: { ...s.weights, [weight]: value } } : s));
+    const { error } = await supabase.from('strain_weights').upsert({
+      strain_id: id, weight, price: value === '' ? null : Number(value),
+    });
+    if (error) {
+      setStrains(p => p.map(s => s.id === id ? before : s));
+      reportWrite(error);
+    }
+  };
+
+  const openNewFlower = () => {
+    setEditing({ isNew: true, isExtract: false });
+    setForm({
+      id: mkId(), type: 'H', name: '', lineage: '', terpenes: '',
+      brandId: brands[0]?.id ?? '', thc: '', cbd: '', inStock: true, weights: {},
+    });
+  };
+
   const openNewExtract = () => { setEditing({ isNew: true, isExtract: true }); setForm({ id: mkId(), category: 'vape', type: 'H', brand: '', name: '', extract: 'Distillate', texture: '', size: '1g', price: '', hasBattery: false, inStock: true }); };
 
-  const saveForm = () => {
-    if (editing.isExtract) {
-      if (editing.isNew) setExtracts(p => [...p, form]);
-      else setExtracts(p => p.map(s => s.id === form.id ? form : s));
-      supabase.from('extracts').upsert(extractToDb(form)).then(({ error }) => {
-        if (error) console.error('Save extract failed:', error);
-      });
-    } else {
-      if (editing.isNew) setStrains(p => [...p, form]);
-      else setStrains(p => p.map(s => s.id === form.id ? form : s));
-      supabase.from('strains').upsert(strainToDb(form)).then(({ error }) => {
-        if (error) console.error('Save strain failed:', error);
-      });
+  // Reconciles form.weights against what is already in strain_weights:
+  // checking a weight inserts a row, unchecking deletes it, and an edited
+  // price updates in place. Prices only ever live here, never on `strains`.
+  const saveWeights = async (strainId, weights) => {
+    const before = strains.find(s => s.id === strainId)?.weights ?? {};
+    const wanted = Object.keys(weights);
+    const dropped = Object.keys(before).filter(w => !wanted.includes(w));
+
+    if (dropped.length) {
+      const { error } = await supabase
+        .from('strain_weights').delete()
+        .eq('strain_id', strainId).in('weight', dropped);
+      if (error) return error;
     }
-    setEditing(null);
+    if (wanted.length) {
+      const { error } = await supabase.from('strain_weights').upsert(
+        wanted.map(w => ({
+          strain_id: strainId,
+          weight: w,
+          price: weights[w] === '' ? null : Number(weights[w]),
+        }))
+      );
+      if (error) return error;
+    }
+    return null;
   };
 
-  // ── Inline tier editing (for the flattened edit view) ─────
-  const updateTierField = (strainId, tierKey, field, value) => {
-    const strain = strains.find(s => s.id === strainId);
-    if (!strain) return;
-    const newTiers = { ...strain.tiers, [tierKey]: { ...strain.tiers[tierKey], [field]: value } };
-    setStrains(prev => prev.map(s => s.id === strainId ? { ...s, tiers: newTiers } : s));
-    supabase.from('strains').update({ tiers: newTiers }).eq('id', strainId)
-      .then(({ error }) => { if (error) console.error('Inline update failed:', error); });
+  const saveForm = async () => {
+    if (editing.isExtract) {
+      const { error } = await supabase.from('extracts').upsert(extractToDb(form));
+      if (error) return reportWrite(error);
+      setExtracts(p => editing.isNew ? [...p, form] : p.map(s => s.id === form.id ? form : s));
+    } else {
+      // The strain row has to exist before strain_weights can reference it.
+      const { error } = await supabase.from('strains').upsert(strainToDb(form));
+      if (error) return reportWrite(error);
+      const wErr = await saveWeights(form.id, form.weights ?? {});
+      if (wErr) return reportWrite(wErr);
+      setStrains(p => editing.isNew ? [...p, form] : p.map(s => s.id === form.id ? form : s));
+    }
+    setSaveError(null);
+    setEditing(null);
   };
 
   const exportBackup = () => {
@@ -456,8 +499,42 @@ export default function MenuApp() {
   URL.revokeObjectURL(url);
 };
 
-  const doPrint = (menuType) => {
-    const html = menuType === 'extracts' ? buildExtractsHtml(extracts) : buildFlowerHtml(strains, menuType);
+  // One shared column definition for the header row and every strain row, so
+  // they cannot drift apart. Fixed px for everything except the name, which
+  // absorbs the slack.
+  const rowGrid = {
+    display: 'grid',
+    gridTemplateColumns:
+      `26px 20px minmax(140px, 1fr) 110px 66px ${weightOptions.map(() => '76px').join(' ')} 68px`,
+    gap: '10px',
+    alignItems: 'center',
+  };
+
+  // Print pages come from weight_options.print_page, so the tab list and the
+  // page contents stay in sync with the table without a code change.
+  const printPages = [...new Map(
+    weightOptions.map(w => [w.print_page, w])
+  ).values()];
+
+  const doPrint = async (pageId, pageTitle) => {
+    let html;
+    if (pageId === 'extracts') {
+      html = buildExtractsHtml(extracts);
+    } else {
+      const { data, error } = await supabase.from('v_print_menu').select('*');
+      if (error) return reportWrite(error);
+      const rows = data ?? [];
+
+      const skipped = rows.filter(r =>
+        r.print_page === pageId && r.in_stock !== false && r.price == null);
+      if (skipped.length && !window.confirm(
+        `${skipped.length} in-stock listing${skipped.length === 1 ? '' : 's'} on this page ` +
+        `${skipped.length === 1 ? 'has' : 'have'} no price and will be left off:\n\n` +
+        `${[...new Set(skipped.map(r => `${r.name} — ${r.weight_label}`))].join('\n')}\n\nPrint anyway?`
+      )) return;
+
+      html = buildFlowerHtml(rows, pageId, pageTitle, brands);
+    }
     const w = window.open('', '_blank');
     if (w) { w.document.write(html); w.document.close(); }
   };
@@ -482,60 +559,56 @@ export default function MenuApp() {
             <>
               <div style={{ marginBottom: '10px' }}>{lbl('Dominant Terpenes')}{inp('terpenes')}</div>
               <div style={{ marginBottom: '14px' }}>{lbl('Lineage')}{inp('lineage')}</div>
-              
-              <div style={{ marginBottom: '14px', background: '#252540', padding: '10px', borderRadius: '6px', border: `1px solid ${C.border}` }}>
-                {lbl('Available Tiers (Check all that apply)')}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', marginTop: '8px' }}>
-                  {TIER_ORDER.map(t => (
-                    <label key={t} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: C.text, fontSize: '13px', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={!!form.tiers?.[t]?.active} onChange={e => {
-                        const checked = e.target.checked;
-                        setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], active: checked } } }));
-                      }} />
-                      {TIER_CFG[t].label}
-                    </label>
-                  ))}
-                </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                <div>{lbl('Brand')}{sel('brandId', brands.map(b => [b.id, b.label]))}</div>
+                <div>{lbl('THC %')}{inp('thc')}</div>
+                <div>{lbl('CBD %')}{inp('cbd')}</div>
               </div>
 
-              {TIER_ORDER.filter(t => form.tiers?.[t]?.active).map(t => (
-                <div key={t} style={{ background: '#1c1c31', border: `1px solid ${C.border}`, padding: '12px', borderRadius: '6px', marginBottom: '12px' }}>
-                  <div style={{ color: C.text, fontWeight: 'bold', fontSize: '12px', marginBottom: '10px', textTransform: 'uppercase' }}>{TIER_CFG[t].label} Settings</div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-                    <div>
-                      {lbl('THC %')}
-                      <input value={form.tiers[t].thc || ''} onChange={e => {
-                        const val = e.target.value;
-                        setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], thc: val } } }));
-                      }} style={{ width: '100%', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '6px 8px', borderRadius: '3px', fontSize: '13px' }} />
-                    </div>
-
-                    {t === 'thirdParty' && (
-                      <div>
-                        {lbl('Price (e.g. $45)')}
-                        <input value={form.tiers[t].price || ''} onChange={e => {
-                          const val = e.target.value;
-                          setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], price: val } } }));
-                        }} style={{ width: '100%', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '6px 8px', borderRadius: '3px', fontSize: '13px' }} />
+              {/* One row per offered weight. Checking a weight creates a
+                  strain_weights row on save, unchecking deletes it. Price is
+                  per weight — there is no single strain price any more. */}
+              <div style={{ marginBottom: '14px', background: '#252540', padding: '12px', borderRadius: '6px', border: `1px solid ${C.border}` }}>
+                {lbl('Weights offered — each has its own price')}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                  {weightOptions.map(w => {
+                    const on = form.weights?.[w.weight] !== undefined;
+                    return (
+                      <div key={w.weight} style={{ display: 'grid', gridTemplateColumns: '1fr 110px', gap: '10px', alignItems: 'center' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: on ? C.text : C.muted, fontSize: '13px', cursor: 'pointer', minHeight: TAP }}>
+                          <input
+                            type="checkbox" checked={on}
+                            onChange={e => setForm(p => {
+                              const next = { ...(p.weights ?? {}) };
+                              if (e.target.checked) next[w.weight] = '';
+                              else delete next[w.weight];
+                              return { ...p, weights: next };
+                            })}
+                            style={{ width: 20, height: 20, accentColor: C.accent, cursor: 'pointer' }}
+                          />
+                          {w.label} <span style={{ color: C.muted, fontSize: 11 }}>({w.weight})</span>
+                        </label>
+                        <input
+                          type="number" inputMode="decimal" step="0.01" min="0"
+                          disabled={!on}
+                          placeholder={on ? 'price' : '—'}
+                          value={form.weights?.[w.weight] ?? ''}
+                          onChange={e => setForm(p => ({ ...p, weights: { ...p.weights, [w.weight]: e.target.value } }))}
+                          style={{
+                            width: '100%', minHeight: TAP, background: on ? '#14142a' : '#1a1a2a',
+                            border: `1px solid ${C.border}`, color: on ? C.text : C.muted,
+                            padding: '6px 8px', borderRadius: '3px', fontSize: '16px', textAlign: 'center',
+                          }}
+                        />
                       </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '20px' }}>
-                    {[['eighths', 'In Eighths'], ['quarters', 'In Quarters'], ['halves', 'In Halves']].map(([f, l]) => (
-                      <label key={f} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: C.text, cursor: 'pointer', fontSize: '13px' }}>
-                        <input type="checkbox" checked={!!form.tiers[t][f]} onChange={e => {
-                          const checked = e.target.checked;
-                          setForm(p => ({ ...p, tiers: { ...p.tiers, [t]: { ...p.tiers[t], [f]: checked } } }));
-                        }} />{l}
-                      </label>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
             </>
           )}
+
 
           {editing.isExtract && (
             <>
@@ -581,11 +654,11 @@ export default function MenuApp() {
           Menu Manager Tutorial
         </h2>
         <ul style={{ lineHeight: '1.8', fontSize: '14px', paddingLeft: '20px' }}>
-          <li><strong>Sizes:</strong> Use the ⅛ ¼ ½ checkboxes on each strain to toggle what sizes are available. Changes save automatically.</li>
-          <li><strong>THC %:</strong> Type the THC percentage directly in the box next to each strain. It saves as you type.</li>
-          <li><strong>In/Out:</strong> The green "In" button marks a strain as in stock. Click it to toggle to "Out" — the strain stays in the system but won't print.</li>
-          <li><strong>✎ Edit:</strong> Opens the detail editor for lineage, terpenes, and tier assignments (the stuff that rarely changes).</li>
-          <li><strong>Synced to Cloud:</strong> All changes sync automatically. No more JSON exports needed — but backups are still available just in case.</li>
+          <li><strong>Stock dot:</strong> The circle on the left of each row. Filled green means in stock, hollow means out. Everyone can tap it — out-of-stock strains stay in the list but don't print.</li>
+          <li><strong>Weights and prices:</strong> Every weight a strain is offered in has its own price. Open ✎ Edit to tick the weights and type a price for each.</li>
+          <li><strong>✎ Edit:</strong> Brand, THC %, lineage, terpenes, and per-weight prices. Editors only.</li>
+          <li><strong>Bands:</strong> Strains group A–H, I–N, O–U, V–Z. Tap a band header to fold it.</li>
+          <li><strong>Printing:</strong> Which page a weight prints on is set in the database, not here. Quarters currently print under the eighths page.</li>
         </ul>
         <button 
           onClick={() => setShowHelp(false)} 
@@ -607,18 +680,22 @@ export default function MenuApp() {
       <div style={{ background: '#12122a', borderBottom: `1px solid ${C.border}`, padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div>
           <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#fff', letterSpacing: '0.5px' }}>PURLIFE — HOBBS</div>
-          <div style={{ fontSize: '11px', color: C.muted }}>Menu Manager v2</div>
+          <div style={{ fontSize: '11px', color: C.muted }}>
+            Menu Manager v2 · {user?.email} · {isMenuEditor ? 'editor' : 'view + stock only'}
+          </div>
         </div>
-        
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button 
-            onClick={importBackup} 
-            style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
-          >
-            📂 Import JSON
-          </button>
-          <button 
-            onClick={exportBackup} 
+
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          {isMenuEditor && (
+            <button
+              onClick={importBackup}
+              style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+            >
+              📂 Import JSON
+            </button>
+          )}
+          <button
+            onClick={exportBackup}
             style={{ background: C.panel, color: C.text, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
           >
             💾 Backup JSON
@@ -629,11 +706,38 @@ export default function MenuApp() {
           >
             ❓ Help
           </button>
+          <button
+            onClick={signOut}
+            style={{ background: C.panel, color: C.muted, border: `1px solid ${C.border}`, padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px' }}
+          >
+            Sign out
+          </button>
         </div>
       </div>
+
+      {loadError && (
+        <div style={{ background: '#3a1f1f', color: '#e79090', padding: '10px 18px', fontSize: 13 }}>
+          {loadError}
+        </div>
+      )}
+
+      {/* The UI gate is cosmetic; this is where the database's answer shows up. */}
+      {saveError && (
+        <div style={{ background: '#3a1f1f', color: '#e79090', padding: '10px 18px', fontSize: 13, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{saveError}</span>
+          <button onClick={() => setSaveError(null)} style={{ background: 'none', border: 'none', color: '#e79090', cursor: 'pointer', fontSize: 15 }}>×</button>
+        </div>
+      )}
       {/* 3. Navigation Tabs */}
       <div style={{ display: 'flex', borderBottom: `1px solid ${C.border}`, background: '#12122a', overflowX: 'auto' }}>
-        {[['edit-flower', 'Edit Flower'], ['edit-extracts', 'Edit Extracts'], ['eighths', 'Print Eighths'], ['halves', 'Print Halves'], ['extracts', 'Print Extracts']].map(([id, lbl]) => (
+        {/* Print tabs are generated from weight_options.print_page, so adding
+            a weight that prints on a new page adds a tab by itself. */}
+        {[
+          ['edit-flower', 'Edit Flower'],
+          ['edit-extracts', 'Edit Extracts'],
+          ...printPages.map(p => [p.print_page, `Print ${p.print_page[0].toUpperCase()}${p.print_page.slice(1)}`]),
+          ['extracts', 'Print Extracts'],
+        ].map(([id, lbl]) => (
           <button key={id} onClick={() => setTab(id)} style={{ padding: '10px 18px', border: 'none', background: 'transparent', color: tab === id ? '#fff' : C.muted, borderBottom: tab === id ? `2px solid ${C.accent}` : '2px solid transparent', cursor: 'pointer', fontSize: '13px', fontWeight: tab === id ? 'bold' : 'normal', whiteSpace: 'nowrap' }}>{lbl}</button>
         ))}
       </div>
@@ -641,108 +745,135 @@ export default function MenuApp() {
     <div style={{ padding: '18px', maxWidth: (tab === 'edit-flower' || tab === 'edit-extracts') ? '1400px' : '920px', margin: '0 auto', transition: 'max-width 0.3s ease' }}>
        {tab === 'edit-flower' && (
           <div>
-            <button onClick={openNewFlower} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '18px' }}>+ Add Flower Strain</button>
+            {isMenuEditor && (
+              <button onClick={openNewFlower} style={{ background: C.accent, color: '#fff', border: 'none', padding: '10px 18px', minHeight: TAP, borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '18px' }}>+ Add Flower Strain</button>
+            )}
 
-            {/* Tier-organized list with inline controls */}
-            {TIER_ORDER.map(tier => {
-              const tierStrains = sortItems(strains.filter(s => s.tiers?.[tier]?.active));
-              if (!tierStrains.length) return null;
-              const tierBg = TIER_COLORS[tier] || '#2a2a45';
-              const isThirdParty = tier === 'thirdParty';
+            {loaded && !strains.length && (
+              <div style={{ color: C.muted, fontSize: 13, padding: '30px 0', textAlign: 'center' }}>
+                No strains. Either nothing is in the database, or your login cannot read it.
+              </div>
+            )}
+
+            {/* Alphabet bands. The old tier grouping is gone with the tiers. */}
+            {BANDS.map(band => {
+              const bandStrains = strains
+                .filter(s => bandOf(s.name) === band.id)
+                .sort((a, b) => a.name.localeCompare(b.name));
+              if (!bandStrains.length) return null;
+              const isOpen = !collapsed[band.id];
 
               return (
-                <div key={tier} style={{ marginBottom: '20px', background: C.panel, borderRadius: '8px', overflow: 'hidden', border: `1px solid ${C.border}`, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-                  {/* Tier Header */}
-                  <div style={{ background: tierBg, color: '#fff', fontWeight: 'bold', padding: '10px 16px', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px', textShadow: '0 1px 2px rgba(0,0,0,0.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>{TIER_CFG[tier].label}</span>
-                    <span style={{ fontSize: '11px', fontWeight: 'normal', opacity: 0.8 }}>{tierStrains.length} strain{tierStrains.length !== 1 ? 's' : ''}</span>
-                  </div>
+                <div key={band.id} style={{ marginBottom: '16px', background: C.panel, borderRadius: '8px', overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                  <button
+                    onClick={() => toggleBand(band.id)}
+                    style={{ width: '100%', minHeight: TAP, background: '#2a2a45', color: '#fff', fontWeight: 'bold', padding: '10px 16px', fontSize: '14px', letterSpacing: '1px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: 'none', cursor: 'pointer' }}
+                  >
+                    <span>{isOpen ? '▾' : '▸'} {band.label}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 'normal', opacity: 0.7 }}>
+                      {bandStrains.length} strain{bandStrains.length !== 1 ? 's' : ''}
+                    </span>
+                  </button>
 
-                  {/* Column Labels */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 120px 80px 100px 90px', gap: '8px', padding: '8px 12px 4px', fontSize: '10px', color: C.muted, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px', borderBottom: `1px solid ${C.border}`, alignItems: 'center' }}>
-                    <div></div>
-                    <div>Strain</div>
-                    <div style={{ textAlign: 'center' }}>Sizes</div>
-                    <div style={{ textAlign: 'center' }}>THC %</div>
-                    {isThirdParty && <div style={{ textAlign: 'center' }}>Price</div>}
-                    {!isThirdParty && <div></div>}
-                    <div style={{ textAlign: 'center' }}>Actions</div>
-                  </div>
+                  {/* One real column per weight, sized in px. Every row is its
+                      own grid, so any `auto`/`fr` track here would size to its
+                      own content and the columns would jitter row to row as
+                      soon as strains stop offering identical weights. */}
+                  {isOpen && (
+                    <div style={{ ...rowGrid, padding: '6px 12px', minHeight: 0, fontSize: 10, color: C.muted, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '.5px', borderBottom: `1px solid ${C.border}` }}>
+                      <div /><div />
+                      <div>Strain</div>
+                      <div>Brand</div>
+                      <div style={{ textAlign: 'center' }}>THC</div>
+                      {weightOptions.map(w => (
+                        <div key={w.weight} style={{ textAlign: 'center' }}>{w.label}</div>
+                      ))}
+                      <div />
+                    </div>
+                  )}
 
-                  {/* Strain Rows */}
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    {tierStrains.map((s, i) => {
-                      const td = s.tiers[tier];
-                      return (
-                        <div key={s.id} style={{
-                          display: 'grid', gridTemplateColumns: '36px 1fr 120px 80px 100px 90px', gap: '8px',
-                          padding: '8px 12px', alignItems: 'center',
-                          background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
-                          opacity: s.inStock === false ? 0.45 : 1,
-                          borderBottom: `1px solid ${C.border}22`,
-                        }}>
-                          {/* Type Badge */}
-                          <div style={{ color: TU[s.type], fontWeight: 'bold', fontSize: '15px', textAlign: 'center' }}>{s.type}</div>
+                  {isOpen && bandStrains.map((s, i) => {
+                    const out = s.inStock === false;
+                    return (
+                      <div key={s.id} style={{
+                        ...rowGrid,
+                        padding: '8px 12px', minHeight: TAP,
+                        background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
+                        opacity: out ? 0.45 : 1,
+                        borderBottom: `1px solid ${C.border}44`,
+                      }}>
+                        {/* Stock dot — the one control every login gets */}
+                        <button
+                          onClick={() => toggleStock(s.id, false)}
+                          title={out ? 'Mark in stock' : 'Mark out of stock'}
+                          style={{ width: 26, height: 26, borderRadius: '50%', border: `2px solid ${out ? '#4a4a6a' : C.good}`, background: out ? 'transparent' : C.good, cursor: 'pointer', padding: 0 }}
+                        />
 
-                          {/* Strain Name */}
-                          <div style={{ fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textDecoration: s.inStock === false ? 'line-through' : 'none' }}>{s.name}</div>
+                        <div style={{ color: TU[s.type], fontWeight: 'bold', fontSize: '15px', textAlign: 'center' }}>{s.type}</div>
 
-                          {/* Size Checkboxes */}
-                          <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                            {[['eighths', '⅛'], ['quarters', '¼'], ['halves', '½']].map(([field, label]) => (
-                              <label key={field} style={{ display: 'flex', alignItems: 'center', gap: '2px', cursor: 'pointer', fontSize: '13px', color: td[field] ? '#fff' : C.muted }}>
-                                <input type="checkbox" checked={!!td[field]} onChange={() => updateTierField(s.id, tier, field, !td[field])}
-                                  style={{ accentColor: tierBg, cursor: 'pointer', width: '15px', height: '15px' }} />
-                                <span>{label}</span>
-                              </label>
-                            ))}
-                          </div>
-
-                          {/* THC Input */}
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '2px' }}>
-                            <input
-                              type="text" value={td.thc || ''} placeholder="—"
-                              onChange={e => updateTierField(s.id, tier, 'thc', e.target.value)}
-                              style={{ width: '48px', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '4px 6px', borderRadius: '3px', fontSize: '12px', textAlign: 'center' }}
-                            />
-                            <span style={{ fontSize: '11px', color: C.muted }}>%</span>
-                          </div>
-
-                          {/* Price (Third Party) or spacer */}
-                          {isThirdParty ? (
-                            <div style={{ display: 'flex', justifyContent: 'center' }}>
-                              <input
-                                type="text" value={td.price || ''} placeholder="$0"
-                                onChange={e => updateTierField(s.id, tier, 'price', e.target.value)}
-                                style={{ width: '64px', background: '#14142a', border: `1px solid ${C.border}`, color: C.text, padding: '4px 6px', borderRadius: '3px', fontSize: '12px', textAlign: 'center' }}
-                              />
-                            </div>
-                          ) : <div></div>}
-
-                          {/* Action Buttons */}
-                          <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
-                            <button onClick={() => toggleStock(s.id, false)} title={s.inStock === false ? 'Mark In Stock' : 'Mark Out of Stock'}
-                              style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}>
-                              {s.inStock === false ? 'Out' : 'In'}
-                            </button>
-                            <button onClick={() => openEdit(s, false)} title="Edit details (lineage, terpenes, tiers)"
-                              style={{ background: '#35355a', color: C.text, border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>✎</button>
-                            <button onClick={() => deleteItem(s.id, false)} title="Delete strain"
-                              style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
-                          </div>
+                        <div title={s.name} style={{ minWidth: 0, fontWeight: 'bold', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: out ? 'line-through' : 'none' }}>
+                          {s.name}
                         </div>
-                      );
-                    })}
-                  </div>
+
+                        <div style={{ minWidth: 0, fontSize: '11px', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {brands.find(b => b.id === s.brandId)?.label ?? <span style={{ color: '#a06060' }}>no brand</span>}
+                        </div>
+
+                        <div style={{ textAlign: 'center' }}>
+                          {isMenuEditor
+                            ? <InlineCell value={s.thc} suffix="%" width={44}
+                                onCommit={v => saveStrainField(s.id, 'thc', v)} />
+                            : <span style={{ fontSize: 12, color: s.thc === '' ? C.muted : C.text }}>
+                                {s.thc === '' ? '—' : `${s.thc}%`}
+                              </span>}
+                        </div>
+
+                        {/* A weight the strain isn't offered in reads as a dash.
+                            Ticking it on is the modal's job; the price for one
+                            already offered is editable right here so bulk entry
+                            doesn't mean 38 modal round trips. */}
+                        {weightOptions.map(w => {
+                          const offered = s.weights[w.weight] !== undefined;
+                          return (
+                            <div key={w.weight} style={{ textAlign: 'center' }}>
+                              {!offered
+                                ? <span style={{ color: C.muted, opacity: .4 }}>—</span>
+                                : isMenuEditor
+                                  ? <InlineCell value={s.weights[w.weight]} prefix="$" width={50}
+                                      onCommit={v => saveWeightPrice(s.id, w.weight, v)} />
+                                  : <strong style={{ fontSize: 12, color: '#fff' }}>
+                                      {money(s.weights[w.weight]) || '—'}
+                                    </strong>}
+                            </div>
+                          );
+                        })}
+
+                        <div style={{ display: 'flex', gap: '4px', justifyContent: 'flex-end' }}>
+                          {isMenuEditor && (
+                            <>
+                              <button onClick={() => openEdit(s, false)} title="Edit details and prices"
+                                style={{ background: '#35355a', color: C.text, border: 'none', padding: '7px 9px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px' }}>✎</button>
+                              <button onClick={() => deleteItem(s.id, false)} title="Delete strain"
+                                style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '7px 9px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px' }}>×</button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
                 </div>
               );
             })}
           </div>
         )}
+
                 
         {tab === 'edit-extracts' && (
           <div>
-            <button onClick={openNewExtract} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '18px' }}>+ Add Vape / Concentrate</button>
+            {isMenuEditor && (
+              <button onClick={openNewExtract} style={{ background: C.accent, color: '#fff', border: 'none', padding: '10px 18px', minHeight: TAP, borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', marginBottom: '18px' }}>+ Add Vape / Concentrate</button>
+            )}
             
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '24px' }}>
               {/* Columns: Disposables, Cartridges, Concentrates */}
@@ -775,8 +906,12 @@ export default function MenuApp() {
                             
                             <div style={{ display: 'flex', gap: '4px' }}>
                               <button onClick={() => toggleStock(s.id, true)} style={{ background: s.inStock === false ? '#4a4a6a' : '#2d5a2d', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>{s.inStock === false ? 'Out' : 'In'}</button>
-                              <button onClick={() => openEdit(s, true)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
-                              <button onClick={() => deleteItem(s.id, true)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
+                              {isMenuEditor && (
+                                <>
+                                  <button onClick={() => openEdit(s, true)} style={{ background: '#35355a', color: C.text, border: 'none', padding: '6px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>Edit</button>
+                                  <button onClick={() => deleteItem(s.id, true)} style={{ background: '#3a1f1f', color: '#e07070', border: 'none', padding: '6px 10px', borderRadius: '3px', cursor: 'pointer', fontSize: '11px' }}>×</button>
+                                </>
+                              )}
                             </div>
                           </div>
                        </div>
@@ -787,12 +922,17 @@ export default function MenuApp() {
             </div>
           </div>
         )}
-        {['eighths', 'halves', 'extracts'].includes(tab) && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', background: C.panel, padding: '10px 16px', borderRadius: '6px', border: `1px solid ${C.border}` }}>
-             <div style={{ fontSize: '12px', color: C.good }}>✓ Ready to print</div>
-            <button onClick={() => doPrint(tab)} style={{ background: C.accent, color: '#fff', border: 'none', padding: '8px 22px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Open Print View</button>
-          </div>
-)}
+        {(tab === 'extracts' || printPages.some(p => p.print_page === tab)) && (() => {
+          const title = tab === 'extracts'
+            ? 'EXTRACTS & VAPES'
+            : `FLOWER — ${tab.toUpperCase()}`;
+          return (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', background: C.panel, padding: '10px 16px', borderRadius: '6px', border: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: '12px', color: C.good }}>✓ Ready to print — {title}</div>
+              <button onClick={() => doPrint(tab, title)} style={{ background: C.accent, color: '#fff', border: 'none', padding: '10px 22px', minHeight: TAP, borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px' }}>Open Print View</button>
+            </div>
+          );
+        })()}
       </div>
 
       {/* This renders the edit popup if it's active */}
