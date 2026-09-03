@@ -177,13 +177,13 @@ ${vapesHtml}${concHtml}
 // A number cell that edits in place. Keeps its own draft so typing stays
 // responsive, and only calls onCommit on blur or Enter — one write per field
 // rather than one per keystroke.
-function InlineCell({ value, onCommit, prefix = '', suffix = '', width }) {
+function InlineCell({ value, onCommit, prefix = '', suffix = '', width = 56 }) {
   const [draft, setDraft] = useState(value);
   // Re-sync when the row changes underneath (a rolled-back write, a reload).
   useEffect(() => { setDraft(value); }, [value]);
 
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, width }}>
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, minWidth: 0 }}>
       {prefix && <span style={{ color: C.muted, fontSize: 11 }}>{prefix}</span>}
       <input
         type="number" inputMode="decimal" step="0.01" min="0"
@@ -192,9 +192,15 @@ function InlineCell({ value, onCommit, prefix = '', suffix = '', width }) {
         onBlur={() => onCommit(draft)}
         onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
         style={{
-          width: '100%', minWidth: 40, background: 'transparent',
-          border: `1px solid ${C.border}`, borderRadius: 3, color: C.text,
-          padding: '4px 4px', fontSize: 13, textAlign: 'center',
+          // A fixed width plus border-box: number inputs carry a wide
+          // intrinsic size, and without this they refuse to shrink and push
+          // into the neighbouring grid column.
+          width, minWidth: 0, boxSizing: 'border-box',
+          background: 'transparent', border: `1px solid ${C.border}`,
+          borderRadius: 3, color: C.text, padding: '4px 6px',
+          fontSize: 13, textAlign: 'center',
+          // Spinners eat horizontal space and are useless on a touch screen.
+          appearance: 'textfield', MozAppearance: 'textfield',
         }}
       />
       {suffix && <span style={{ color: C.muted, fontSize: 11 }}>{suffix}</span>}
@@ -748,7 +754,13 @@ function MenuApp() {
                     const out = s.inStock === false;
                     return (
                       <div key={s.id} style={{
-                        display: 'grid', gridTemplateColumns: '28px 28px 1fr 110px 70px 1fr 84px', gap: '10px',
+                        // Every flexible track gets an explicit floor via
+                        // minmax(). A bare `1fr` can't shrink below its
+                        // content's min-content width, which is what made the
+                        // price cells spill into the column next door.
+                        display: 'grid',
+                        gridTemplateColumns: '28px 22px minmax(120px, 1.6fr) 90px 78px minmax(190px, 1.5fr) 72px',
+                        gap: '10px',
                         padding: '10px 12px', alignItems: 'center', minHeight: TAP,
                         background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)',
                         opacity: out ? 0.45 : 1,
@@ -763,17 +775,17 @@ function MenuApp() {
 
                         <div style={{ color: TU[s.type], fontWeight: 'bold', fontSize: '15px', textAlign: 'center' }}>{s.type}</div>
 
-                        <div style={{ fontWeight: 'bold', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: out ? 'line-through' : 'none' }}>
+                        <div title={s.name} style={{ minWidth: 0, fontWeight: 'bold', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: out ? 'line-through' : 'none' }}>
                           {s.name}
                         </div>
 
-                        <div style={{ fontSize: '11px', color: C.muted }}>
+                        <div style={{ minWidth: 0, fontSize: '11px', color: C.muted, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {brands.find(b => b.id === s.brandId)?.label ?? <span style={{ color: '#a06060' }}>no brand</span>}
                         </div>
 
                         {isMenuEditor
                           ? <InlineCell
-                              value={s.thc} suffix="%" width="100%"
+                              value={s.thc} suffix="%" width={48}
                               onCommit={v => saveStrainField(s.id, 'thc', v)}
                             />
                           : <div style={{ fontSize: '12px', textAlign: 'center', color: s.thc === '' ? C.muted : C.text }}>
@@ -783,7 +795,7 @@ function MenuApp() {
                         {/* Which weights a strain is offered in comes from the
                             modal; the price for each is editable in place so
                             bulk entry doesn't mean 38 modal round trips. */}
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <div style={{ minWidth: 0, display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                           {offered.length === 0
                             ? <span style={{ fontSize: 11, color: '#a06060' }}>no weights set</span>
                             : offered.map(w => (
@@ -791,7 +803,7 @@ function MenuApp() {
                                   {w.label}
                                   {isMenuEditor
                                     ? <InlineCell
-                                        value={s.weights[w.weight]} prefix="$" width="56px"
+                                        value={s.weights[w.weight]} prefix="$" width={52}
                                         onCommit={v => saveWeightPrice(s.id, w.weight, v)}
                                       />
                                     : <strong style={{ color: '#fff' }}>{money(s.weights[w.weight]) || '—'}</strong>}

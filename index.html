@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Menu Manager</title>
+    <style>
+      /* Number spinners eat horizontal space in the inline price cells and
+         are useless on a touch screen. Pseudo-elements can't be set from the
+         inline styles the rest of this app uses. */
+      input[type="number"]::-webkit-outer-spin-button,
+      input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+      input[type="number"] { -moz-appearance: textfield; }
+      /* Nothing in this app should scroll sideways. */
+      body { margin: 0; overflow-x: hidden; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
