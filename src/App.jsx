@@ -50,7 +50,11 @@ const sortItems = arr => [...arr].sort((a, b) => (TO[a.type] ?? 9) - (TO[b.type]
 // print_subhead / weight_sort in weight_options. Moving quarters onto their
 // own page is a row edit in that table, not a change here.
 function buildFlowerHtml(rows, pageId, pageTitle) {
-  const pageRows = rows.filter(r => r.print_page === pageId && r.in_stock !== false);
+  // A row with a weight but no price would print a blank price cell on a
+  // customer-facing menu. Drop it here and count it, so the app can warn
+  // before anything reaches the printer.
+  const pageRows = rows.filter(r =>
+    r.print_page === pageId && r.in_stock !== false && r.price != null);
 
   // null subhead prints first, then the rest in weight_sort order.
   const subheads = [];
@@ -168,6 +172,34 @@ tbody tr td{padding:5px;border-bottom:1px solid #ccc;vertical-align:middle}
 <div class="leg"><span style="color:${TC.I};font-weight:bold">I</span> Indica &nbsp;&nbsp; <span style="color:${TC.H};font-weight:bold">H</span> Hybrid &nbsp;&nbsp; <span style="color:${TC.S};font-weight:bold">S</span> Sativa</div>
 ${vapesHtml}${concHtml}
 <div class="foot">Prices subject to change</div><script>window.onload=function(){window.print()}</script></body></html>`;
+}
+
+// A number cell that edits in place. Keeps its own draft so typing stays
+// responsive, and only calls onCommit on blur or Enter — one write per field
+// rather than one per keystroke.
+function InlineCell({ value, onCommit, prefix = '', suffix = '', width }) {
+  const [draft, setDraft] = useState(value);
+  // Re-sync when the row changes underneath (a rolled-back write, a reload).
+  useEffect(() => { setDraft(value); }, [value]);
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 1, width }}>
+      {prefix && <span style={{ color: C.muted, fontSize: 11 }}>{prefix}</span>}
+      <input
+        type="number" inputMode="decimal" step="0.01" min="0"
+        value={draft} placeholder="—"
+        onChange={e => setDraft(e.target.value)}
+        onBlur={() => onCommit(draft)}
+        onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+        style={{
+          width: '100%', minWidth: 40, background: 'transparent',
+          border: `1px solid ${C.border}`, borderRadius: 3, color: C.text,
+          padding: '4px 4px', fontSize: 13, textAlign: 'center',
+        }}
+      />
+      {suffix && <span style={{ color: C.muted, fontSize: 11 }}>{suffix}</span>}
+    </span>
+  );
 }
 
 // ── Main app ─────────────────────────────────────────────────
@@ -339,6 +371,37 @@ function MenuApp() {
 
   const openEdit = (s, isExtract) => { setEditing({ ...s, isExtract }); setForm({ ...s }); };
 
+  // ── Inline, per-row saves ─────────────────────────────────
+  // Bulk data entry goes through these, not the modal: tab across the row,
+  // type, move on. Writes fire on blur rather than on every keystroke.
+  const saveStrainField = async (id, field, value) => {
+    const before = strains.find(s => s.id === id);
+    if (!before || before[field] === value) return;
+    setStrains(p => p.map(s => s.id === id ? { ...s, [field]: value } : s));
+    const { error } = await supabase
+      .from('strains')
+      .update(strainToDb({ ...before, [field]: value }))
+      .eq('id', id);
+    if (error) {
+      setStrains(p => p.map(s => s.id === id ? before : s));
+      reportWrite(error);
+    }
+  };
+
+  const saveWeightPrice = async (id, weight, value) => {
+    const before = strains.find(s => s.id === id);
+    if (!before || before.weights[weight] === value) return;
+    setStrains(p => p.map(s => s.id === id
+      ? { ...s, weights: { ...s.weights, [weight]: value } } : s));
+    const { error } = await supabase.from('strain_weights').upsert({
+      strain_id: id, weight, price: value === '' ? null : Number(value),
+    });
+    if (error) {
+      setStrains(p => p.map(s => s.id === id ? before : s));
+      reportWrite(error);
+    }
+  };
+
   const openNewFlower = () => {
     setEditing({ isNew: true, isExtract: false });
     setForm({
@@ -428,7 +491,17 @@ function MenuApp() {
     } else {
       const { data, error } = await supabase.from('v_print_menu').select('*');
       if (error) return reportWrite(error);
-      html = buildFlowerHtml(data ?? [], pageId, pageTitle);
+      const rows = data ?? [];
+
+      const skipped = rows.filter(r =>
+        r.print_page === pageId && r.in_stock !== false && r.price == null);
+      if (skipped.length && !window.confirm(
+        `${skipped.length} in-stock listing${skipped.length === 1 ? '' : 's'} on this page ` +
+        `${skipped.length === 1 ? 'has' : 'have'} no price and will be left off:\n\n` +
+        `${[...new Set(skipped.map(r => `${r.name} — ${r.weight_label}`))].join('\n')}\n\nPrint anyway?`
+      )) return;
+
+      html = buildFlowerHtml(rows, pageId, pageTitle);
     }
     const w = window.open('', '_blank');
     if (w) { w.document.write(html); w.document.close(); }
@@ -698,17 +771,30 @@ function MenuApp() {
                           {brands.find(b => b.id === s.brandId)?.label ?? <span style={{ color: '#a06060' }}>no brand</span>}
                         </div>
 
-                        <div style={{ fontSize: '12px', textAlign: 'center', color: s.thc === '' ? C.muted : C.text }}>
-                          {s.thc === '' ? '—' : `${s.thc}%`}
-                        </div>
+                        {isMenuEditor
+                          ? <InlineCell
+                              value={s.thc} suffix="%" width="100%"
+                              onCommit={v => saveStrainField(s.id, 'thc', v)}
+                            />
+                          : <div style={{ fontSize: '12px', textAlign: 'center', color: s.thc === '' ? C.muted : C.text }}>
+                              {s.thc === '' ? '—' : `${s.thc}%`}
+                            </div>}
 
-                        {/* Weights + prices, read-only here. Editing them is the modal. */}
-                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {/* Which weights a strain is offered in comes from the
+                            modal; the price for each is editable in place so
+                            bulk entry doesn't mean 38 modal round trips. */}
+                        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
                           {offered.length === 0
                             ? <span style={{ fontSize: 11, color: '#a06060' }}>no weights set</span>
                             : offered.map(w => (
-                                <span key={w.weight} style={{ fontSize: 11, background: '#14142a', border: `1px solid ${C.border}`, borderRadius: 3, padding: '3px 6px', whiteSpace: 'nowrap' }}>
-                                  {w.label} <strong style={{ color: '#fff' }}>{money(s.weights[w.weight]) || '—'}</strong>
+                                <span key={w.weight} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, background: '#14142a', border: `1px solid ${C.border}`, borderRadius: 3, padding: '2px 6px', whiteSpace: 'nowrap' }}>
+                                  {w.label}
+                                  {isMenuEditor
+                                    ? <InlineCell
+                                        value={s.weights[w.weight]} prefix="$" width="56px"
+                                        onCommit={v => saveWeightPrice(s.id, w.weight, v)}
+                                      />
+                                    : <strong style={{ color: '#fff' }}>{money(s.weights[w.weight]) || '—'}</strong>}
                                 </span>
                               ))}
                         </div>
